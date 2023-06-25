@@ -378,6 +378,8 @@ pub struct Connection {
 
     recv_hashmap: HashMap<u64, u64>,
 
+    feed_back: bool,
+
 }
 
 impl Connection {
@@ -469,6 +471,8 @@ impl Connection {
             recv_flag: false,
 
             recv_hashmap:HashMap::new(),
+
+            feed_back: false,
         };
 
         conn.recovery.on_init();
@@ -508,6 +512,7 @@ impl Connection {
         
         if hdr.ty == packet::Type::Handshake && !self.is_server{
             self.handshake_confirmed = false;
+            self.feed_back = false;
         }
         //receiver send back the sent info to sender
         if hdr.ty == packet::Type::ACK && self.is_server{
@@ -516,6 +521,7 @@ impl Connection {
 
         if hdr.ty == packet::Type::ElictAck{
             self.check_loss(&mut buf[26..]);
+            self.feed_back = false;
         }
 
         if hdr.ty == packet::Type::Application{
@@ -538,6 +544,9 @@ impl Connection {
         Ok(read)
     }
 
+    pub fn send_ack(&self)->bool{
+        self.feed_back
+    }
     //Get unack offset. 
     fn process_ack(&mut self, buf: &mut [u8]){
         let unackbuf = &buf[27..];
@@ -649,8 +658,8 @@ impl Connection {
             to: self.peeraddr,
         };
 
-        // if ty == packet::Type::Handshake && self.server{
-        if ty == packet::Type::Handshake{
+        if ty == packet::Type::Handshake && self.server{
+        // if ty == packet::Type::Handshake{
             let hdr = Header {
                 ty,
                 pkt_num: pn,
@@ -660,13 +669,29 @@ impl Connection {
             };
             let mut b = octets::OctetsMut::with_slice(out);
             hdr.to_bytes(&mut b)?;
-            if self.server{
-                self.set_handshake();
-            }
+            // if self.server{
+            //     self.set_handshake();
+            // }
+            self.set_handshake();
         }
+
+        if ty == packet::Type::Handshake && !self.server{
+            // if ty == packet::Type::Handshake{
+                let hdr = Header {
+                    ty,
+                    pkt_num: pn,
+                    offset: offset,
+                    priority: priority,
+                    pkt_length: psize,
+                };
+                let mut b = octets::OctetsMut::with_slice(out);
+                hdr.to_bytes(&mut b)?;
+                self.feed_back = true;
+            }
         
         //send the received packet condtion
         if ty == packet::Type::ACK{
+            self.feed_back = true;
             let mut b = octets::OctetsMut::with_slice(out);
             let hdr = Header {
                 ty,
