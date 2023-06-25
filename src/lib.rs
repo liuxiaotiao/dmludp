@@ -107,6 +107,8 @@ pub enum Error {
 
     /// Not enough available identifiers.
     OutOfIdentifiers,
+
+    Stopped,
 }
 
 impl Error {
@@ -119,6 +121,7 @@ impl Error {
             Error::FlowControl => 0x3,
             Error::StreamLimit => 0x4,
             Error::FinalSize => 0x6,
+            Error::Stopped => 0x19,
             _ => 0xa,
         }
     }
@@ -144,6 +147,7 @@ impl Error {
             Error::StreamReset { .. } => -16,
             Error::IdLimit => -17,
             Error::OutOfIdentifiers => -18,
+            Error::Stopped => -19
         }
     }
 }
@@ -527,6 +531,10 @@ impl Connection {
             }
         }
 
+        if hdr.ty == packet::Type::Stop{
+            return Err(Error::Stopped);
+        }
+
         Ok(read)
     }
 
@@ -636,6 +644,11 @@ impl Connection {
 
         let ty = self.write_pkt_type()?; 
 
+        let info = SendInfo {
+            from: self.localaddr,
+            to: self.peeraddr,
+        };
+
         // if ty == packet::Type::Handshake && self.server{
         if ty == packet::Type::Handshake{
             let hdr = Header {
@@ -744,14 +757,27 @@ impl Connection {
             }
         }  
 
+        if ty == packet::Type::Stop{
+            let mut b = octets::OctetsMut::with_slice(out);
+            let hdr = Header{
+                ty,
+                pkt_num: pn,
+                offset: offset,
+                priority: priority,
+                pkt_length: psize,
+            };
+
+            hdr.to_bytes(&mut b)?;
+            
+            total_len += offset as usize;
+            return Ok((total_len, info));
+        }
+
         if self.is_stopped() {
             return Err(Error::Done);
         }
 
-        let info = SendInfo {
-            from: self.localaddr,
-            to: self.peeraddr,
-        };
+        
         self.handshake = time::Instant::now();
 
         total_len += offset as usize;
@@ -763,6 +789,7 @@ impl Connection {
         self.stop_flag && self.stop_ack
     }
 
+    //Start updating congestion control window and sending new data.
     pub fn is_ack(&self)->bool{
         let now = Instant::now();
         let interval = now.duration_since(self.handshake);
@@ -772,7 +799,8 @@ impl Connection {
         false
     }
 
-    pub fn read(&self, length:usize){
+    pub fn read(&mut self, out:&mut [u8]) -> Result<usize>{
+        self.rec_buffer.emit(out)
 
     }
   
@@ -998,6 +1026,10 @@ impl Connection {
 
         if self.rtt != Duration::ZERO{
             return Ok(packet::Type::Application);
+        }
+
+        if self.send_buffer.data.is_empty(){
+            return Ok(packet::Type::Stop);
         }
 
         Err(Error::Done)

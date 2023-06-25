@@ -35,6 +35,12 @@ pub enum Type {
 
     ///ACK
     ACK = 0x05,
+
+    /// STOP
+    Stop = 0x06,
+
+    /// Fin
+    Fin = 0x07,
 }
 
 
@@ -94,8 +100,12 @@ impl<'a> Header {
             Type::Application
         }else if first == 0x04{
             Type::ElictAck
-        }else{
+        }else if first == 0x05{
             Type::ACK
+        }else if first == 0x06{
+            Type::Stop
+        }else{
+            Type::Fin
         };
 
         let second = b.get_u64()?;
@@ -123,8 +133,12 @@ impl<'a> Header {
             0x03 as u8
         }else if self.ty == Type::ElictAck{
             0x04 as u8
-        }else{
+        }else if self.ty == Type::ACK{
             0x05 as u8
+        }else if self.ty == Type::Stop{
+            0x06 as u8
+        }else{
+            0x07 as u8
         };
 
         ////// no related data
