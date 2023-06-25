@@ -344,6 +344,8 @@ pub struct Connection {
 
     stop_flag: bool,
 
+    stop_ack: bool,
+
     prioritydic: HashMap<u64,u8>,
 
     off: u64,
@@ -440,6 +442,7 @@ impl Connection {
 
             //All buffer data have been sent, waiting for the ack responce.
             stop_flag: false,
+            stop_ack: false,
 
             prioritydic:HashMap::new(),
 
@@ -472,7 +475,12 @@ impl Connection {
 
     fn update_rtt(&mut self){
         let arrive_time = Instant::now();
-        self.rtt = arrive_time.duration_since(self.handshake);
+        if self.rtt == Duration::ZERO{
+            self.rtt = arrive_time.duration_since(self.handshake);
+        }else{
+            self.rtt = self.rtt/8 + 15*arrive_time.duration_since(self.handshake)/16;
+        }
+        
     }
 
     pub fn recv_slice(&mut self, buf: &mut [u8]) ->Result<usize>{
@@ -570,7 +578,7 @@ impl Connection {
     //pub fn send_all(&mut self, data: &mut [u8]) -> Result<bool> {
     pub fn send_all(&mut self) -> Result<bool> {
         self.stop_flag = false;
-
+        self.stop_ack = false;
         //let self.position = self.get_position();
         // let write_to_buffer = &data[self.written_data..];
         
@@ -595,6 +603,8 @@ impl Connection {
         if self.send_buffer.recv_index.len() != 0{
             self.send_buffer.recv_and_drop();
         }
+
+        self.set_handshake();
 
         if self.send_data.len() > self.written_data{
             let write = self.write();
@@ -637,6 +647,9 @@ impl Connection {
             };
             let mut b = octets::OctetsMut::with_slice(out);
             hdr.to_bytes(&mut b)?;
+            if self.server{
+                self.set_handshake();
+            }
         }
         
         //send the received packet condtion
@@ -658,10 +671,12 @@ impl Connection {
             }
 
             self.recv_hashmap.clear();
+            self.update_rtt();
         }
 
         //send the 
         if ty == packet::Type::ElictAck{
+            let ElictAck_time = Instant::now();
             let mut b = octets::OctetsMut::with_slice(out);
             if self.stop_flag == true{
                 //When send_buf send out all data
@@ -678,6 +693,7 @@ impl Connection {
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
                 }
+                self.stop_ack = true;
             }
             else{
                 //normally, every 8 pakcets will send a ElictAck packet.
@@ -728,6 +744,10 @@ impl Connection {
             }
         }  
 
+        if self.is_stopped() {
+            return Err(Error::Done);
+        }
+
         let info = SendInfo {
             from: self.localaddr,
             to: self.peeraddr,
@@ -736,6 +756,20 @@ impl Connection {
 
         total_len += offset as usize;
         Ok((total_len, info))
+    }
+
+
+    pub fn is_stopped(&self)->bool{
+        self.stop_flag && self.stop_ack
+    }
+
+    pub fn is_ack(&self)->bool{
+        let now = Instant::now();
+        let interval = now.duration_since(self.handshake);
+        if interval > self.rtt{
+            return true;
+        }
+        false
     }
 
     pub fn read(&self, length:usize){
