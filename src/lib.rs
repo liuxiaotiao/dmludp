@@ -1,6 +1,6 @@
 use std::cmp;
-use std::cmp::min;
-use std::collections::btree_map::Range;
+// use std::cmp::min;
+// use std::collections::btree_map::Range;
 use std::convert::TryInto;
 use std::result;
 use std::time;
@@ -10,14 +10,14 @@ use std::net::SocketAddr;
 
 use std::str::FromStr;
 
-use std::collections::HashSet;
+// use std::collections::HashSet;
 use std::collections::VecDeque;
-use std::collections::hash_map;
+// use std::collections::hash_map;
 use std::collections::BTreeMap;
-use std::collections::BinaryHeap;
+// use std::collections::BinaryHeap;
 use std::collections::HashMap;
-use std::vec;
-use rand::Rng;
+// use std::vec;
+// use rand::Rng;
 
 const HEADER_LENGTH: usize = 26;
 
@@ -30,14 +30,11 @@ pub const MIN_CLIENT_INITIAL_LEN: usize = 1350;
 #[cfg(not(feature = "fuzzing"))]
 const PAYLOAD_MIN_LEN: usize = 4;
 
-
-
 // The default max_datagram_size used in congestion control.
 const MAX_SEND_UDP_PAYLOAD_SIZE: usize = 1350;
 
 // The default length of DATAGRAM queues.
 const DEFAULT_MAX_DGRAM_QUEUE_LEN: usize = 0;
-
 
 const SEND_BUFFER_SIZE:usize = 1024;
 
@@ -228,7 +225,6 @@ impl Config {
         self.max_idle_timeout = v;
     }
    
-
     /// Sets the congestion control algorithm used by string.
     ///
     /// The default value is `cubic`. On error `Error::CongestionControl`
@@ -287,14 +283,13 @@ pub struct Connection {
     sent_count: usize,
 
     /// Total number of lost packets.
-    lost_count: usize,
+    // lost_count: usize,
 
     /// Total number of packets sent with data retransmitted.
-    retrans_count: usize,
-
+    // retrans_count: usize,
 
     /// Total number of bytes sent lost over the connection.
-    lost_bytes: u64,
+    // lost_bytes: u64,
 
     /// Draining timeout expiration time.
     draining_timer: Option<time::Instant>,
@@ -401,14 +396,12 @@ impl Connection {
                 packet::PktNumSpace::new(),
             ],
 
-
             recv_count: 0,
             sent_count: 0,
-            lost_count: 0,
-            retrans_count: 0,
+            // lost_count: 0,
+            // retrans_count: 0,
 
-            lost_bytes: 0,
-
+            // lost_bytes: 0,
 
             draining_timer: None,
             is_server,
@@ -529,8 +522,6 @@ impl Connection {
         Ok(read)
     }
 
-    
-
     //Get unack offset. 
     fn process_ack(&mut self, buf: &mut [u8]){
         let unackbuf = &buf[27..];
@@ -554,7 +545,6 @@ impl Connection {
                 self.send_buffer.ack_and_drop(unack);
             }
 
-            
         }
 
         ///////////////////////////////////////////////////////////////////////
@@ -606,7 +596,6 @@ impl Connection {
             self.send_buffer.recv_and_drop();
         }
 
-
         if self.send_data.len() > self.written_data{
             let write = self.write();
             self.written_data += write.unwrap();
@@ -617,6 +606,7 @@ impl Connection {
         
     }
 
+    //Send single packet
     pub fn send_data(&mut self, out: &mut [u8])-> Result<(usize, SendInfo)>{
         if out.is_empty(){
             return Err(Error::BufferTooShort);
@@ -633,7 +623,6 @@ impl Connection {
         let mut offset:u64 = 0;
         let mut priority:u8 = 0;
         let mut psize:u64 = 0;
-
 
         let ty = self.write_pkt_type()?; 
 
@@ -662,7 +651,7 @@ impl Connection {
             };
             hdr.to_bytes(&mut b)?;
 
-            /// pkt_length may not be 8
+            // pkt_length may not be 8
             for (key, val) in self.recv_hashmap.iter() {
                 b.put_u64(*key)?;
                 b.put_u64(*val)?;
@@ -705,7 +694,6 @@ impl Connection {
                     b.put_u64(res[i])?;
                 }
             }
-            
         }
         
 
@@ -738,8 +726,7 @@ impl Connection {
                 self.sent_pkt.push(hdr.offset);
             
             }
-        }
-        
+        }  
 
         let info = SendInfo {
             from: self.localaddr,
@@ -747,11 +734,9 @@ impl Connection {
         };
         self.handshake = time::Instant::now();
 
-
+        total_len += offset as usize;
         Ok((total_len, info))
     }
-
-
 
     pub fn read(&self, length:usize){
 
@@ -957,6 +942,7 @@ impl Connection {
     fn write_pkt_type(& mut self) -> Result<packet::Type> {
         // let now = Instant::now();
         if self.rtt == Duration::ZERO && self.is_server == true{
+            self.handshake_completed = true;
             return Ok(packet::Type::Handshake);
         }
 
@@ -1061,7 +1047,6 @@ pub struct RangeBuf {
 
     /// The offset of the buffer within a stream.
     off: u64,
-
 
 }
 
