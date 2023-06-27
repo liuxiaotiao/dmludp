@@ -277,7 +277,6 @@ pub fn connect(
     Ok(conn)
 }
 
-
 pub struct Connection {
 
     /// Total number of received packets.
@@ -520,6 +519,7 @@ impl Connection {
         }
 
         if hdr.ty == packet::Type::ElictAck{
+            self.recv_flag = true;
             self.check_loss(&mut buf[26..]);
             self.feed_back = false;
         }
@@ -686,12 +686,11 @@ impl Connection {
                 };
                 let mut b = octets::OctetsMut::with_slice(out);
                 hdr.to_bytes(&mut b)?;
-                self.feed_back = true;
+                self.feed_back = true
             }
         
         //send the received packet condtion
         if ty == packet::Type::ACK{
-            self.feed_back = true;
             let mut b = octets::OctetsMut::with_slice(out);
             let hdr = Header {
                 ty,
@@ -715,6 +714,7 @@ impl Connection {
         //send the 
         if ty == packet::Type::ElictAck{
             let ElictAck_time = Instant::now();
+            self.feed_back = true;
             let mut b = octets::OctetsMut::with_slice(out);
             if self.stop_flag == true{
                 //When send_buf send out all data
@@ -753,7 +753,7 @@ impl Connection {
 
         if ty == packet::Type::Application{
             if let Ok((result_len, off, stop)) = self.send_buffer.emit(&mut out[26..]){
-
+                self.sent_count += 1;
                 let mut b = octets::OctetsMut::with_slice(&mut out[done..]);
                 if ty == packet::Type::Application{
                     pn = self.pkt_num_spaces[0].next_pkt_num;
@@ -768,7 +768,8 @@ impl Connection {
                     priority: priority,
                     pkt_length: result_len as u64,
                 };
-    
+                 
+                offset = result_len as u64;
                 hdr.to_bytes(&mut b)?;
 
                 //Recording offset of each data.
@@ -1039,6 +1040,7 @@ impl Connection {
         }
 
         if (self.sent_count % 8 == 0 && self.sent_count > 0) || self.stop_flag == true{
+            self.sent_count = 0;
             return Ok(packet::Type::ElictAck);
         }
 
@@ -1046,6 +1048,7 @@ impl Connection {
         //     return Ok(packet::Type::ACK);
         // }
         if self.recv_flag == true{
+            self.recv_flag = false;
             return Ok(packet::Type::ACK);
         }
 
