@@ -2,7 +2,7 @@ use std::cmp;
 // use std::cmp::min;
 // use std::collections::btree_map::Range;
 use std::convert::TryInto;
-use std::result;
+// use std::result;
 use std::time;
 use std::time::Duration;
 use std::time::Instant;
@@ -304,17 +304,17 @@ pub struct Connection {
     handshake_completed: bool,
 
     /// Whether the HANDSHAKE_DONE frame has been sent.
-    handshake_done_sent: bool,
+    // handshake_done_sent: bool,
 
     /// Whether the HANDSHAKE_DONE frame has been acked.
-    handshake_done_acked: bool,
+    // handshake_done_acked: bool,
 
     /// Whether the connection handshake has been confirmed.
     handshake_confirmed: bool,
 
     /// Whether an ack-eliciting packet has been sent since last receiving a
     /// packet.
-    ack_eliciting_sent: bool,
+    // ack_eliciting_sent: bool,
 
     /// Whether the connection is closed.
     closed: bool,
@@ -379,6 +379,7 @@ pub struct Connection {
 
     feed_back: bool,
 
+    ack_point: usize,
 }
 
 impl Connection {
@@ -416,12 +417,12 @@ impl Connection {
             // Assume clients validate the server's address implicitly.
             handshake_completed: false,
 
-            handshake_done_sent: false,
-            handshake_done_acked: false,
+            // handshake_done_sent: false,
+            // handshake_done_acked: false,
 
             handshake_confirmed: true,
 
-            ack_eliciting_sent: false,
+            // ack_eliciting_sent: false,
 
             closed: false,
 
@@ -472,6 +473,8 @@ impl Connection {
             recv_hashmap:HashMap::new(),
 
             feed_back: false,
+
+            ack_point: 0,
         };
 
         conn.recovery.on_init();
@@ -509,9 +512,10 @@ impl Connection {
             self.handshake_completed = true;
         }
         
+        //If receiver receives a Handshake packet, it will be papred to send a Handshank.
         if hdr.ty == packet::Type::Handshake && !self.is_server{
             self.handshake_confirmed = false;
-            self.feed_back = false;
+            self.feed_back = true;
         }
         //receiver send back the sent info to sender
         if hdr.ty == packet::Type::ACK && self.is_server{
@@ -521,7 +525,7 @@ impl Connection {
         if hdr.ty == packet::Type::ElictAck{
             self.recv_flag = true;
             self.check_loss(&mut buf[26..]);
-            self.feed_back = false;
+            self.feed_back = true;
         }
 
         if hdr.ty == packet::Type::Application{
@@ -554,7 +558,7 @@ impl Connection {
         let mut start = 0;
         let mut weights:f32 = 0.0;
         // let mut b = octets::OctetsMut::with_slice(buf);
-        let mut ack_set:u64 = 0 ;
+        let mut _ack_set:u64 = 0 ;
         while start <= len{
             let unack = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
             start += 8;
@@ -639,17 +643,17 @@ impl Connection {
             return Err(Error::BufferTooShort);
         }
         
-        let mut done = 0;
+        let done = 0;
         let mut total_len:usize = HEADER_LENGTH;
 
         // Limit output packet size to respect the sender and receiver's
         // maximum UDP payload size limit.
-        let mut left = cmp::min(out.len(), self.max_send_udp_payload_size());
+        let mut _left = cmp::min(out.len(), self.max_send_udp_payload_size());
 
         let mut pn:u64 = 0;
         let mut offset:u64 = 0;
         let mut priority:u8 = 0;
-        let mut psize:u64 = 0;
+        let psize:u64 = 0;
 
         let ty = self.write_pkt_type()?; 
 
@@ -677,20 +681,21 @@ impl Connection {
 
         if ty == packet::Type::Handshake && !self.server{
             // if ty == packet::Type::Handshake{
-                let hdr = Header {
-                    ty,
-                    pkt_num: pn,
-                    offset: offset,
-                    priority: priority,
-                    pkt_length: psize,
-                };
-                let mut b = octets::OctetsMut::with_slice(out);
-                hdr.to_bytes(&mut b)?;
-                self.feed_back = true
-            }
-        
+            let hdr = Header {
+                ty,
+                pkt_num: pn,
+                offset: offset,
+                priority: priority,
+                pkt_length: psize,
+            };
+            let mut b = octets::OctetsMut::with_slice(out);
+            hdr.to_bytes(&mut b)?;
+            self.feed_back = false;
+        }
+    
         //send the received packet condtion
         if ty == packet::Type::ACK{
+            self.feed_back = false;
             let mut b = octets::OctetsMut::with_slice(out);
             let hdr = Header {
                 ty,
@@ -699,6 +704,7 @@ impl Connection {
                 priority: 0,
                 pkt_length: 8*16,
             };
+            offset = 8*16;
             hdr.to_bytes(&mut b)?;
 
             // pkt_length may not be 8
@@ -713,13 +719,14 @@ impl Connection {
 
         //send the 
         if ty == packet::Type::ElictAck{
-            let ElictAck_time = Instant::now();
-            self.feed_back = true;
+            // let ElictAck_time: Instant = Instant::now();
             let mut b = octets::OctetsMut::with_slice(out);
             if self.stop_flag == true{
                 //When send_buf send out all data
-                let pkt_counter = self.sent_pkt.len() - self.sent_pkt.len()%8;
-                let res = &self.sent_pkt[pkt_counter..];
+                // let pkt_counter = self.sent_pkt.len() - self.sent_pkt.len()%8;
+                // let res = &self.sent_pkt[pkt_counter..];
+                let res = &self.sent_pkt[self.ack_point..];
+                let pkt_counter = self.sent_pkt.len() - self.ack_point;
                 let hdr = Header{
                     ty,
                     pkt_num: pn,
@@ -731,11 +738,13 @@ impl Connection {
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
                 }
+                self.ack_point = self.sent_pkt.len();
                 self.stop_ack = true;
             }
             else{
                 //normally, every 8 pakcets will send a ElictAck packet.
-                let res = &self.sent_pkt[(self.sent_pkt.len()-self.sent_pkt.len()%8)..];
+                // let res = &self.sent_pkt[(self.sent_pkt.len()-self.sent_pkt.len()%8)..];
+                let res = &self.sent_pkt[self.ack_point..];
                 let hdr = Header{
                     ty,
                     pkt_num: pn,
@@ -747,8 +756,34 @@ impl Connection {
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
                 }
+                self.ack_point = self.sent_pkt.len();
             }
         }
+
+        // Test later
+        // if ty == packet::Type::ElictAck{
+        //     let mut b = octets::OctetsMut::with_slice(out);
+        //     //When send_buf send out all data
+        //     let res = &self.sent_pkt[self.ack_point..];
+        //     let pkt_counter = self.sent_pkt.len() - self.ack_point;
+        //     let hdr = Header{
+        //         ty,
+        //         pkt_num: pn,
+        //         offset: offset,
+        //         priority: priority,
+        //         pkt_length: (pkt_counter*8) as u64,
+        //     };
+        //     hdr.to_bytes(&mut b).unwrap();
+        //     for i in 0..res.len() as usize{
+        //         b.put_u64(res[i])?;
+        //     }
+        //     self.ack_point = self.sent_pkt.len();
+
+        //     if self.stop_flag{
+        //         self.stop_ack = true;
+        //     }
+                
+        // }
         
 
         if ty == packet::Type::Application{
@@ -883,9 +918,9 @@ impl Connection {
     //     hdr
     // }
 
-    fn record_reset(&mut self){
+    // fn record_reset(&mut self){
     
-    }
+    // }
 
     // fn check_loss(&mut self, recv_buf: &mut [u8])->Vec<u64>{
     //     let mut offset:u64 = 0;
@@ -914,7 +949,7 @@ impl Connection {
     pub fn check_loss(&mut self, recv_buf: &mut [u8]){
         let mut offset:u64 = 0;
         let mut b = octets::OctetsMut::with_slice(recv_buf);
-        let result:Vec<u64> = Vec::new();
+        // let result:Vec<u64> = Vec::new();
         while b.cap()>0 {
             offset = b.get_u64().unwrap();
             // priority == 0 means that packet received
@@ -961,7 +996,7 @@ impl Connection {
         Ok(b.off())
     }
 
-    pub fn getretrylength(&mut self,offset:u64) -> Result<u64>{
+    pub fn getretrylength(&mut self, offset:u64) -> Result<u64>{
         let length = 1024;
         Ok(length)
     }
