@@ -333,7 +333,7 @@ pub struct Connection {
 
     recovery: Recovery,
 
-    pkt_num_spaces: [packet::PktNumSpace; 2],
+    pkt_num_spaces: packet::PktNumSpace,
 
     rtt: time::Duration,
     
@@ -380,6 +380,8 @@ pub struct Connection {
     feed_back: bool,
 
     ack_point: usize,
+
+    next_pkt_num: u64,
 }
 
 impl Connection {
@@ -399,10 +401,7 @@ impl Connection {
 
         let mut conn = Connection {
 
-            pkt_num_spaces: [
-                packet::PktNumSpace::new(),
-                packet::PktNumSpace::new(),
-            ],
+            pkt_num_spaces: packet::PktNumSpace::new(),
 
             recv_count: 0,
             sent_count: 0,
@@ -475,6 +474,8 @@ impl Connection {
             feed_back: false,
 
             ack_point: 0,
+
+            next_pkt_num: 0,
         };
 
         conn.recovery.on_init();
@@ -534,10 +535,10 @@ impl Connection {
             self.rec_buffer.write(&mut buf[26..],hdr.offset).unwrap();
             self.prioritydic.insert(hdr.offset, hdr.priority);
             self.recv_dic.insert(hdr.offset, hdr.priority);
-            if self.pkt_num_spaces[0].recv_pkt_num.get_priority(hdr.offset) == 0{
-                self.pkt_num_spaces[0].recv_pkt_num.additem(hdr.offset, hdr.priority as usize);
+            if self.pkt_num_spaces.recv_pkt_num.get_priority(hdr.offset) == 0{
+                self.pkt_num_spaces.recv_pkt_num.additem(hdr.offset, hdr.priority as usize);
             }else {
-                self.pkt_num_spaces[0].recv_pkt_num.update_item(hdr.offset, hdr.priority as usize);
+                self.pkt_num_spaces.recv_pkt_num.update_item(hdr.offset, hdr.priority as usize);
             }
         }
 
@@ -653,7 +654,7 @@ impl Connection {
         let mut pn:u64 = 0;
         let mut offset:u64 = 0;
         let mut priority:u8 = 0;
-        let psize:u64 = 0;
+        let mut psize:u64 = 0;
 
         let ty = self.write_pkt_type()?; 
 
@@ -697,14 +698,15 @@ impl Connection {
         if ty == packet::Type::ACK{
             self.feed_back = false;
             let mut b = octets::OctetsMut::with_slice(out);
+            psize = self.recv_hashmap.len() as u64;
             let hdr = Header {
                 ty,
                 pkt_num: 0,
                 offset: 0,
                 priority: 0,
-                pkt_length: 8*16,
+                pkt_length: psize,
             };
-            offset = 8*16;
+            // offset = 8*16;
             hdr.to_bytes(&mut b)?;
 
             // pkt_length may not be 8
@@ -738,6 +740,7 @@ impl Connection {
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
                 }
+                psize = (pkt_counter*8) as u64;
                 self.ack_point = self.sent_pkt.len();
                 self.stop_ack = true;
             }
@@ -757,6 +760,7 @@ impl Connection {
                     b.put_u64(res[i])?;
                 }
                 self.ack_point = self.sent_pkt.len();
+                psize = 64;
             }
         }
 
@@ -791,10 +795,11 @@ impl Connection {
                 self.sent_count += 1;
                 let mut b = octets::OctetsMut::with_slice(&mut out[done..]);
                 if ty == packet::Type::Application{
-                    pn = self.pkt_num_spaces[0].next_pkt_num;
-                    
+                    // pn = self.pkt_num_spaces[0].next_pkt_num;
+                    pn = self.next_pkt_num;
                     priority = self.priority_calculation(off);
-                    self.pkt_num_spaces[0].next_pkt_num += 1;
+                    // self.pkt_num_spaces[0].next_pkt_num += 1;
+                    self.next_pkt_num += 1;
                 }
                 let hdr = Header {
                     ty,
@@ -805,6 +810,7 @@ impl Connection {
                 };
                  
                 offset = result_len as u64;
+                psize = result_len as u64;
                 hdr.to_bytes(&mut b)?;
 
                 //Recording offset of each data.
@@ -830,7 +836,8 @@ impl Connection {
 
             hdr.to_bytes(&mut b)?;
             
-            total_len += offset as usize;
+            // total_len += offset as usize;
+            total_len += psize as usize;
             return Ok((total_len, info));
         }
 
@@ -841,7 +848,8 @@ impl Connection {
         
         self.handshake = time::Instant::now();
 
-        total_len += offset as usize;
+        // total_len += offset as usize;
+        total_len += psize as usize;
         Ok((total_len, info))
     }
 
@@ -953,10 +961,10 @@ impl Connection {
         while b.cap()>0 {
             offset = b.get_u64().unwrap();
             // priority == 0 means that packet received
-            if self.pkt_num_spaces[0].recv_pkt_num.check_received(offset){
+            if self.pkt_num_spaces.recv_pkt_num.check_received(offset){
                 self.recv_hashmap.insert(offset, 0);
             }else {
-                self.recv_hashmap.insert(offset, self.pkt_num_spaces[0].recv_pkt_num.get_retrans_times(offset));
+                self.recv_hashmap.insert(offset, self.pkt_num_spaces.recv_pkt_num.get_retrans_times(offset));
             }
         }
 
@@ -983,13 +991,13 @@ impl Connection {
 
         let hdr = Header {
             ty: Type::Retry,
-            pkt_num: self.pkt_num_spaces[0].next_pkt_num,
+            pkt_num: self.pkt_num_spaces.next_pkt_num,
             priority: pri,
             offset: offset,
             pkt_length: self.getretrylength(offset)?,
         };
     
-        self.pkt_num_spaces[0].next_pkt_num +=1;
+        self.pkt_num_spaces.next_pkt_num +=1;
 
         hdr.to_bytes(&mut b)?;
     
