@@ -41,6 +41,9 @@ pub enum Type {
 
     /// Fin
     Fin = 0x07,
+
+    // StartACK
+    StartAck = 0x08,
 }
 
 
@@ -104,8 +107,10 @@ impl<'a> Header {
             Type::ACK
         }else if first == 0x06{
             Type::Stop
-        }else{
+        }else if first == 0x07{
             Type::Fin
+        }else{
+            Type::StartAck
         };
 
         let second = b.get_u64()?;
@@ -235,6 +240,7 @@ impl PktNumWindow {
         if offset%1024 == 0{
             self.priority_record.insert(offset,priority as u64);
         }   
+        self.update_retrans(offset, priority.try_into().unwrap(), 1);
     }
 
     //
@@ -255,7 +261,7 @@ impl PktNumWindow {
         if self.record.contains_key(&offset){
             let condition = self.record.get(&offset).unwrap();
             let received = condition[1];
-            let mut retrans = condition[0];
+            let retrans = condition[0];
             if received == 1{
                 return true
             }else {
@@ -282,7 +288,12 @@ impl PktNumWindow {
     pub fn get_retrans_times(& self, offset: u64)->u64{
         if self.record.contains_key(&offset){
             let retrans = self.record.get(&offset).unwrap()[0];
-            return retrans+1
+            let recv = self.record.get(&offset).unwrap()[1];
+            if recv == 1{
+                return 0
+            }else {
+                return retrans+1
+            }
         }else {
             return 0
         }
@@ -292,6 +303,7 @@ impl PktNumWindow {
         if offset%1024 == 0{
             self.priority_record.insert(offset,priority as u64);
         }   
+        self.update_retrans(offset, priority.try_into().unwrap(), 1);
     }
 
     pub fn update_retrans(&mut self, offset: u64, retrans: u64, received: u64){

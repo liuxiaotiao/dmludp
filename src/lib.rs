@@ -335,7 +335,7 @@ pub struct Connection {
 
     pkt_num_spaces: [packet::PktNumSpace; 2],
 
-    rtt: time::Duration,
+    pub rtt: time::Duration,
     
     handshake: time::Instant,
 
@@ -559,7 +559,7 @@ impl Connection {
         let mut weights:f32 = 0.0;
         // let mut b = octets::OctetsMut::with_slice(buf);
         let mut _ack_set:u64 = 0 ;
-        while start <= len{
+        while start < len{
             let unack = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
             start += 8;
             let priority = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
@@ -621,9 +621,10 @@ impl Connection {
         // if send_all() == false
         // check self.send_data.len()
         // no longer send_all()
-        if self.send_buffer.recv_index.len() != 0{
+
+        /*if self.send_buffer.recv_index.len() != 0{
             self.send_buffer.recv_and_drop();
-        }
+        }*/
 
         self.set_handshake();
 
@@ -697,7 +698,7 @@ impl Connection {
         if ty == packet::Type::ACK{
             self.feed_back = false;
             let mut b = octets::OctetsMut::with_slice(out);
-            psize = self.recv_hashmap.len() as u64;
+            psize = (self.recv_hashmap.len()*8*2) as u64;
             let hdr = Header {
                 ty,
                 pkt_num: 0,
@@ -762,6 +763,8 @@ impl Connection {
                 self.ack_point = self.sent_pkt.len();
                 psize = 64;
             }
+            total_len += psize as usize;
+            return Ok((total_len, info))
         }
 
         // Test later
@@ -1582,8 +1585,9 @@ impl SendBuf {
         if off_len > 0{
             let first_buf = RangeBuf::from(&data[..off_len], self.off);
 
-            self.index += self.index+1;
+            
             self.offset_index.insert( self.off,self.index);
+            self.index += self.index+1;
             self.recv_index.push(false);
 
             self.data.push_back(first_buf);
