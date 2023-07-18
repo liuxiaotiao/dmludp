@@ -1,21 +1,17 @@
-use std::collections::VecDeque;
-use std::{sync::Arc, cmp, collections::BTreeMap};
-
-use crate::Error;
 use crate::Result;
 
-const FORM_BIT: u8 = 0x03;
-const FORM_RETRY: u8 = 0x01;
-const FIXED_BIT: u8 = 0x40;
-const KEY_PHASE_BIT: u8 = 0x04;
+// const FORM_BIT: u8 = 0x03;
+// const FORM_RETRY: u8 = 0x01;
+// const FIXED_BIT: u8 = 0x40;
+// const KEY_PHASE_BIT: u8 = 0x04;
 
-const TYPE_MASK: u8 = 0x30;
-const PKT_NUM_MASK: u8 = 0x03;
+// const TYPE_MASK: u8 = 0x30;
+// const PKT_NUM_MASK: u8 = 0x03;
 
-pub const MAX_PKT_NUM_LEN: usize = 4;
+// pub const MAX_PKT_NUM_LEN: usize = 4;
 
-const SAMPLE_LEN: usize = 16;
-const SEND_BUFFER_SIZE:usize = 1024;
+// const SAMPLE_LEN: usize = 16;
+// const SEND_BUFFER_SIZE:usize = 1024;
 
 /// QUIC packet type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,13 +155,13 @@ impl<'a> Header {
     /// Returns true if the packet has a long header.
     ///
     /// The `b` parameter represents the first byte of the QUIC header.
-    fn is_application(b: u8) -> bool {
-        b & FORM_BIT != FORM_BIT
-    }
+    // fn is_application(b: u8) -> bool {
+    //     b & FORM_BIT != FORM_BIT
+    // }
 
-    fn is_retry(b: u8) -> bool {
-        b & FORM_RETRY != FORM_RETRY
-    }
+    // fn is_retry(b: u8) -> bool {
+    //     b & FORM_RETRY != FORM_RETRY
+    // }
 
     //Returning the length of the header
     pub fn len(&self)-> usize{
@@ -311,11 +307,11 @@ impl PktNumWindow {
         self.record.insert(offset, new_condition);
     }
 
-    pub fn update_recived(& mut self, offset: u64){
-        if self.record.contains_key(&offset){
-            self.record.insert(offset, [self.record.get(&offset).unwrap()[0],1]);
-        }
-    }
+    // pub fn update_recived(& mut self, offset: u64){
+    //     if self.record.contains_key(&offset){
+    //         self.record.insert(offset, [self.record.get(&offset).unwrap()[0],1]);
+    //     }
+    // }
 
     pub fn clear_record(& mut self){
         self.record.clear();

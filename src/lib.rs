@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 // use std::vec;
 // use rand::Rng;
+use std::ops::Bound::Included;
 
 const HEADER_LENGTH: usize = 26;
 
@@ -27,14 +28,14 @@ const HEADER_LENGTH: usize = 26;
 /// The minimum length of Initial packets sent by a client.
 pub const MIN_CLIENT_INITIAL_LEN: usize = 1350;
 
-#[cfg(not(feature = "fuzzing"))]
-const PAYLOAD_MIN_LEN: usize = 4;
+// #[cfg(not(feature = "fuzzing"))]
+// const PAYLOAD_MIN_LEN: usize = 4;
 
 // The default max_datagram_size used in congestion control.
 const MAX_SEND_UDP_PAYLOAD_SIZE: usize = 1350;
 
 // The default length of DATAGRAM queues.
-const DEFAULT_MAX_DGRAM_QUEUE_LEN: usize = 0;
+// const DEFAULT_MAX_DGRAM_QUEUE_LEN: usize = 0;
 
 const SEND_BUFFER_SIZE:usize = 1024;
 
@@ -112,19 +113,19 @@ pub enum Error {
 }
 
 impl Error {
-    fn to_wire(self) -> u64 {
-        match self {
-            Error::Done => 0x0,
-            Error::InvalidFrame => 0x7,
-            Error::InvalidStreamState(..) => 0x5,
-            Error::InvalidTransportParam => 0x8,
-            Error::FlowControl => 0x3,
-            Error::StreamLimit => 0x4,
-            Error::FinalSize => 0x6,
-            Error::Stopped => 0x19,
-            _ => 0xa,
-        }
-    }
+    // fn to_wire(self) -> u64 {
+    //     match self {
+    //         Error::Done => 0x0,
+    //         Error::InvalidFrame => 0x7,
+    //         Error::InvalidStreamState(..) => 0x5,
+    //         Error::InvalidTransportParam => 0x8,
+    //         Error::FlowControl => 0x3,
+    //         Error::StreamLimit => 0x4,
+    //         Error::FinalSize => 0x6,
+    //         Error::Stopped => 0x19,
+    //         _ => 0xa,
+    //     }
+    // }
 
     #[cfg(feature = "ffi")]
     fn to_c(self) -> libc::ssize_t {
@@ -351,11 +352,11 @@ pub struct Connection {
 
     prioritydic: HashMap<u64,u8>,
 
-    off: u64,
+    // off: u64,
 
     sent_pkt:Vec<u64>,
 
-    recv_pkt:Vec<u64>,
+    // recv_pkt:Vec<u64>,
 
     recv_dic: HashMap<u64,u8>,
 
@@ -369,7 +370,7 @@ pub struct Connection {
     norm2_vec:Vec<f32>,
 
     //total offset for the each iteration parameter
-    offset_vec:Vec<u64>,
+    // offset_vec:Vec<u64>,
 
     total_offset:u64,
 
@@ -380,6 +381,10 @@ pub struct Connection {
     feed_back: bool,
 
     ack_point: usize,
+
+    max_off: u64,
+
+    send_num: u64,
 }
 
 impl Connection {
@@ -454,10 +459,10 @@ impl Connection {
 
             recv_dic:HashMap::new(),
 
-            off: 0,
+            // off: 0,
 
             sent_pkt:Vec::<u64>::new(),
-            recv_pkt:Vec::<u64>::new(),
+            // recv_pkt:Vec::<u64>::new(),
             
             low_split_point:0.0,
             high_split_point:0.0,
@@ -465,7 +470,7 @@ impl Connection {
             send_data:Vec::<u8>::new(),
             norm2_vec:Vec::<f32>::new(),
 
-            offset_vec:Vec::<u64>::new(),
+            // offset_vec:Vec::<u64>::new(),
             total_offset:0,
 
             recv_flag: false,
@@ -475,6 +480,10 @@ impl Connection {
             feed_back: false,
 
             ack_point: 0,
+
+            max_off: 0,
+
+            send_num: 0,
         };
 
         conn.recovery.on_init();
@@ -488,7 +497,8 @@ impl Connection {
         if self.rtt == Duration::ZERO{
             self.rtt = arrive_time.duration_since(self.handshake);
         }else{
-            self.rtt = self.rtt/8 + 15*arrive_time.duration_since(self.handshake)/16;
+            // self.rtt = self.rtt/8 + 15*arrive_time.duration_since(self.handshake)/16;
+            self.rtt = 17*arrive_time.duration_since(self.handshake)/16;
         }
         
     }
@@ -519,11 +529,14 @@ impl Connection {
         }
         //receiver send back the sent info to sender
         if hdr.ty == packet::Type::ACK && self.is_server{
+            //println!("{:?}",self.send_buffer.offset_index);
             self.process_ack(buf);
+            self.update_rtt();
         }
 
         if hdr.ty == packet::Type::ElictAck{
             self.recv_flag = true;
+            self.send_num = u64::from_be_bytes(buf[1..9].try_into().unwrap());
             self.check_loss(&mut buf[26..]);
             self.feed_back = true;
         }
@@ -553,9 +566,13 @@ impl Connection {
     }
     //Get unack offset. 
     fn process_ack(&mut self, buf: &mut [u8]){
-        let unackbuf = &buf[27..];
+        let unackbuf = &buf[26..];
+        let max_ack = u64::from_be_bytes(unackbuf[..8].try_into().unwrap());
+        if max_ack > self.max_off{
+            self.max_off = max_ack;
+        }
         let len = unackbuf.len();
-        let mut start = 0;
+        let mut start = 8;
         let mut weights:f32 = 0.0;
         // let mut b = octets::OctetsMut::with_slice(buf);
         let mut _ack_set:u64 = 0 ;
@@ -571,8 +588,12 @@ impl Connection {
             }else if priority == 3 {
                 weights += 0.45;
             }else{
+                //println!("offset: {:?}, received",unack);
                 self.send_buffer.ack_and_drop(unack);
+                self.send_buffer.offset_index.remove(&unack);
+                println!("Send_buffer.offset_index.len(): {:?}",self.send_buffer.offset_index.len());
             }
+            println!("offset: {:?}, priority: {:?}",unack,priority);
 
         }
 
@@ -588,7 +609,7 @@ impl Connection {
         //     self.recovery.update_app_limited(b);
         // }
         // self.recovery.update_app_window(weights);
-        self.recovery.update_win(weights, (len/8) as f64);
+        self.recovery.update_win(weights, (len/(8*2)) as f64);
         
     }
 
@@ -625,15 +646,41 @@ impl Connection {
         /*if self.send_buffer.recv_index.len() != 0{
             self.send_buffer.recv_and_drop();
         }*/
+        println!("+++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        /*for da in self.send_buffer.data.iter(){
+            println!("data in buffer: {:?}",da.off);
+        }
+        println!("Before: recv_index.len: {:?}",self.send_buffer.recv_index.len());
+        for (key, val) in self.send_buffer.offset_index.iter(){
+            println!("key: {:?}, val: {:?}",key,val);
+        }
+        println!("data len: {:?}",self.send_buffer.data.len());*/
 
         self.set_handshake();
 
+        //if self.send_data.len() > self.written_data || !self.send_buffer.is_empty(){
         if self.send_data.len() > self.written_data{
             let write = self.write();
             self.written_data += write.unwrap();
+            self.total_offset += write.unwrap() as u64;
+            /*for da in self.send_buffer.data.iter(){
+                println!("data in buffer: {:?}",da.off);
+            }
+            println!("After: recv_index.len: {:?}",self.send_buffer.recv_index.len());
+            for (key, val) in self.send_buffer.offset_index.iter(){
+                println!("key: {:?}, val: {:?}",key,val);
+            }
+            println!("data len: {:?}",self.send_buffer.data.len());*/
             Ok(true)
         }else {
-            Ok(false)
+            if self.send_buffer.data.is_empty(){
+                Ok(false)
+            }else{
+            let write = self.write();
+            self.written_data += write.unwrap();
+            self.total_offset += write.unwrap() as u64;
+                Ok(true)}
+
         }
         
     }
@@ -662,7 +709,6 @@ impl Connection {
             from: self.localaddr,
             to: self.peeraddr,
         };
-
         if ty == packet::Type::Handshake && self.server{
         // if ty == packet::Type::Handshake{
             let hdr = Header {
@@ -698,16 +744,19 @@ impl Connection {
         if ty == packet::Type::ACK{
             self.feed_back = false;
             let mut b = octets::OctetsMut::with_slice(out);
-            psize = (self.recv_hashmap.len()*8*2) as u64;
+            psize = (self.recv_hashmap.len()*8*2 + 8) as u64;
             let hdr = Header {
                 ty,
-                pkt_num: 0,
+                pkt_num: self.send_num,
                 offset: 0,
                 priority: 0,
                 pkt_length: psize,
             };
             // offset = 8*16;
             hdr.to_bytes(&mut b)?;
+            println!("ACk num: {:?}", self.send_num);
+            let max_off = self.max_ack();
+            b.put_u64(max_off)?;
 
             // pkt_length may not be 8
             for (key, val) in self.recv_hashmap.iter() {
@@ -717,11 +766,14 @@ impl Connection {
             }
 
             self.recv_hashmap.clear();
-            self.update_rtt();
+
         }
 
         //send the 
         if ty == packet::Type::ElictAck{
+            pn =  self.pkt_num_spaces[1].next_pkt_num;
+            self.pkt_num_spaces[1].next_pkt_num += 1;
+            println!("ElickAck num: {:?}", pn);
             // let ElictAck_time: Instant = Instant::now();
             let mut b = octets::OctetsMut::with_slice(out);
             if self.stop_flag == true{
@@ -740,6 +792,7 @@ impl Connection {
                 hdr.to_bytes(&mut b).unwrap();
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
+                    println!("ElictAck: {:?}",res[i]);
                 }
                 psize = (pkt_counter*8) as u64;
                 self.ack_point = self.sent_pkt.len();
@@ -759,6 +812,7 @@ impl Connection {
                 hdr.to_bytes(&mut b).unwrap();
                 for i in 0..res.len() as usize{
                     b.put_u64(res[i])?;
+                    println!("ElictAck: {:?}",res[i]);
                 }
                 self.ack_point = self.sent_pkt.len();
                 psize = 64;
@@ -792,17 +846,17 @@ impl Connection {
                 
         // }
         
-
         if ty == packet::Type::Application{
             if let Ok((result_len, off, stop)) = self.send_buffer.emit(&mut out[26..]){
+                if off >= self.written_data.try_into().unwrap(){
+                    return Err(Error::Done);
+                }            
                 self.sent_count += 1;
                 let mut b = octets::OctetsMut::with_slice(&mut out[done..]);
-                if ty == packet::Type::Application{
-                    pn = self.pkt_num_spaces[0].next_pkt_num;
-                    
-                    priority = self.priority_calculation(off);
-                    self.pkt_num_spaces[0].next_pkt_num += 1;
-                }
+                pn = self.pkt_num_spaces[0].next_pkt_num;
+                println!("Application off: {:?}",off); 
+                priority = self.priority_calculation(off);
+                self.pkt_num_spaces[0].next_pkt_num += 1;
                 let hdr = Header {
                     ty,
                     pkt_num: pn,
@@ -810,7 +864,6 @@ impl Connection {
                     priority: priority,
                     pkt_length: result_len as u64,
                 };
-                 
                 offset = result_len as u64;
                 psize = result_len as u64;
                 hdr.to_bytes(&mut b)?;
@@ -874,13 +927,19 @@ impl Connection {
         self.rec_buffer.emit(out)
 
     }
+
+    pub fn max_ack(&mut self) -> u64{
+        self.rec_buffer.max_ack()
+    }
   
     //Writing data to send buffer.
     pub fn write(&mut self) -> Result<usize> {
         //?/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         let off_len = 1024 - (self.total_offset % 1024) as usize;
         //Note: written_data refers to the non-retransmitted data.
-        self.send_buffer.write(&self.send_data[self.written_data..], self.recovery.cwnd(), off_len)
+        let congestion_window = self.recovery.cwnd();
+        println!("cwnd: {:?}", congestion_window);
+        self.send_buffer.write(&self.send_data[self.written_data..], congestion_window, off_len, self.max_off)
     }
 
     pub fn  priority_calculation(&self, off: u64) -> u8{
@@ -957,11 +1016,10 @@ impl Connection {
     // }
 
     pub fn check_loss(&mut self, recv_buf: &mut [u8]){
-        let mut offset:u64 = 0;
         let mut b = octets::OctetsMut::with_slice(recv_buf);
         // let result:Vec<u64> = Vec::new();
         while b.cap()>0 {
-            offset = b.get_u64().unwrap();
+            let offset = b.get_u64().unwrap();
             // priority == 0 means that packet received
             if self.pkt_num_spaces[0].recv_pkt_num.check_received(offset){
                 self.recv_hashmap.insert(offset, 0);
@@ -987,29 +1045,29 @@ impl Connection {
     // pub(crate) offset:u64,
     // pub(crate) pkt_length:u64,
 
-    pub fn retry(&mut self,out: &mut [u8], pri: u8, offset:u64,
-    ) -> Result<usize> {
-        let mut b = octets::OctetsMut::with_slice(out);
+    // pub fn retry(&mut self,out: &mut [u8], pri: u8, offset:u64,
+    // ) -> Result<usize> {
+    //     let mut b = octets::OctetsMut::with_slice(out);
 
-        let hdr = Header {
-            ty: Type::Retry,
-            pkt_num: self.pkt_num_spaces[0].next_pkt_num,
-            priority: pri,
-            offset: offset,
-            pkt_length: self.getretrylength(offset)?,
-        };
+    //     let hdr = Header {
+    //         ty: Type::Retry,
+    //         pkt_num: self.pkt_num_spaces[0].next_pkt_num,
+    //         priority: pri,
+    //         offset: offset,
+    //         pkt_length: self.getretrylength(offset)?,
+    //     };
     
-        self.pkt_num_spaces[0].next_pkt_num +=1;
+    //     self.pkt_num_spaces[0].next_pkt_num +=1;
 
-        hdr.to_bytes(&mut b)?;
+    //     hdr.to_bytes(&mut b)?;
     
-        Ok(b.off())
-    }
+    //     Ok(b.off())
+    // }
 
-    pub fn getretrylength(&mut self, offset:u64) -> Result<u64>{
-        let length = 1024;
-        Ok(length)
-    }
+    // pub fn getretrylength(&mut self, offset:u64) -> Result<u64>{
+    //     let length = 1024;
+    //     Ok(length)
+    // }
 
     /// Returns the maximum possible size of egress UDP payloads.
     ///
@@ -1296,6 +1354,8 @@ pub struct RecvBuf {
     len: u64,
 
     last_maxoff: u64,
+
+    max_recv_off: u64,
 }
 
 impl RecvBuf {
@@ -1313,11 +1373,22 @@ impl RecvBuf {
     /// buffer.
     pub fn write(&mut self, out: &mut [u8], out_off: u64) -> Result<()> {
         let buf = RangeBuf::from(out,out_off);
-        self.data.insert(buf.max_off(), buf);
 
+        let buf_len = buf.len();
+        let tmp_off = buf.max_off()-buf_len as u64;
+        if !self.data.is_empty(){
+            let (k,_v) = self.data.last_key_value().unwrap();
+            if *k == tmp_off{
+                self.max_recv_off = tmp_off;
+            }
+        }   
+        self.data.insert(buf.max_off(), buf);
         Ok(())
     }
 
+    pub fn max_ack(&mut self)->u64{
+        self.max_recv_off
+    }
 
     /// Writes data from the receive buffer into the given output buffer.
     ///
@@ -1362,8 +1433,8 @@ impl RecvBuf {
             }
             
 
-            /// 1. 0 can fill out the rest out buffer
-            /// 2. 
+            // 1. 0 can fill out the rest out buffer
+            // 2. 
             if zero_len < (cap as u64){
                 cap -= zero_len as usize;
                 len += zero_len as usize;
@@ -1380,7 +1451,7 @@ impl RecvBuf {
                 entry.remove();
             }else if zero_len == cap as u64 {
                 self.last_maxoff += zero_len;
-                cap -= zero_len as usize;
+                // cap -= zero_len as usize;
                 len += zero_len as usize;
 
                 break;
@@ -1482,7 +1553,7 @@ pub struct SendBuf {
 
     // data:BTreeMap<u64, RangeBuf>,
     //retransmission buffer.
-    retran_data: VecDeque<RangeBuf>,
+    // retran_data: VecDeque<RangeBuf>,
 
     /// The index of the buffer that needs to be sent next.
     pos: usize,
@@ -1508,7 +1579,7 @@ pub struct SendBuf {
     
     // Ranges of data offsets that have been acked.
     // acked: ranges::RangeSet,
-    offset_index: HashMap<u64,u64>,
+    offset_index: BTreeMap<u64,u64>,
 
     recv_index: Vec< bool>,
 
@@ -1517,6 +1588,8 @@ pub struct SendBuf {
     removed: u64,
 
     sent: usize,
+
+    // drop_pkts: usize,
 }
 
 impl SendBuf {
@@ -1530,12 +1603,12 @@ impl SendBuf {
     }
 
     /// Returns the outgoing flow control capacity.
-    pub fn cap(&self) -> Result<usize> {
+    pub fn cap(&mut self) -> Result<usize> {
         // The stream was stopped, so return the error code instead.
         if let Some(e) = self.error {
             return Err(Error::StreamStopped(e));
         }
-
+        self.used_length = self.len();
         Ok((self.max_data - self.used_length as u64) as usize)
     }
 
@@ -1546,23 +1619,28 @@ impl SendBuf {
     /// writes).
     /// write function is used to write new data into sendbuf, one congestion window 
     /// will run once.
-    pub fn write(&mut self, mut data: &[u8], window_size: usize, off_len: usize) -> Result<usize> {
-        self.recv_and_drop();
+    pub fn write(&mut self, mut data: &[u8], window_size: usize, off_len: usize, max_ack: u64) -> Result<usize> {
+        self.recv_and_drop(max_ack);
         self.max_data = window_size as u64;
         self.removed = 0;
         self.sent = 0;
         // Get the stream send capacity. This will return an error if the stream
         // was stopped.
-
+        self.len = self.len() as u64;
+        self.used_length = self.len();
         //Addressing left data is greater than the window size
         if self.len >= window_size.try_into().unwrap(){
             return Ok(0);
+        }
+
+        if data.len() == 0{
+            return  Ok(0);
         }
     
         let capacity = self.cap()?;
         // self.used_length = window_size;
         // self.used_length = 0;
-
+        
         if data.len() > capacity {
             // Truncate the input buffer according to the stream's capacity.
             let len = capacity;
@@ -1584,11 +1662,11 @@ impl SendBuf {
         /////
         if off_len > 0{
             let first_buf = RangeBuf::from(&data[..off_len], self.off);
-
-            
             self.offset_index.insert( self.off,self.index);
-            self.index += self.index+1;
-            self.recv_index.push(false);
+            // println!("Insert: offset: {:?}, index: {:?}",self.off, self.index);
+            self.index = self.index+1;
+
+            self.recv_index.push(true);
 
             self.data.push_back(first_buf);
             self.off += off_len as u64;
@@ -1603,14 +1681,14 @@ impl SendBuf {
         // avoid fragmentation.
         //for chunk in data.chunks(SEND_BUFFER_SIZE) {
             
-            len += chunk.len();
-            self.index = self.index + 1;
+            len += chunk.len();          
 
             let buf = RangeBuf::from(chunk, self.off);
             
             self.offset_index.insert( self.off,self.index);
-            self.recv_index.push(false);
-
+            //println!("Insert: offset: {:?}, index: {:?}",self.off, self.index);
+            self.index = self.index + 1;
+            self.recv_index.push(true);
             // The new data can simply be appended at the end of the send buffer.
             self.data.push_back(buf);
 
@@ -1618,7 +1696,6 @@ impl SendBuf {
             self.len += chunk.len() as u64;
             self.used_length += chunk.len();
         }
-
         Ok(len)
     }
 
@@ -1649,11 +1726,14 @@ impl SendBuf {
     pub fn emit(&mut self, out: &mut [u8]) -> Result<(usize,u64,bool)> {
         let mut stop = false;
         let mut out_len = out.len();
+        if self.data.is_empty(){
+            println!("no data");
+        }
 
         let out_off = self.off_front();
 
-        let result_len = out.len();     
-
+        // let result_len = out.len();     
+        // let mut useout = false;
         while out_len >= SEND_BUFFER_SIZE && self.ready() 
         {
             let buf = match self.data.get_mut(self.pos) {
@@ -1661,7 +1741,7 @@ impl SendBuf {
 
                 None => break,
             };
-
+            // useout = true;
             if buf.is_empty() {
                 self.pos += 1;
                 continue;
@@ -1680,7 +1760,7 @@ impl SendBuf {
 
             out_len = buf_len;
 
-            buf.consume(buf_len);
+            //buf.consume(buf_len);
             self.pos += 1;
 
             if partial {
@@ -1697,7 +1777,12 @@ impl SendBuf {
         // result_len = out_len;
 
         //All data in the congestion control window has been sent. need to modify
-        if self.sent  >= self.max_data.try_into().unwrap(){
+        if self.sent  >= self.max_data.try_into().unwrap() {
+            stop = true;
+            // result_len = (self.max_data as usize)-self.sent;
+            self.pos = 0;
+        }
+        if self.pos == self.data.len(){
             stop = true;
             // result_len = (self.max_data as usize)-self.sent;
             self.pos = 0;
@@ -1712,47 +1797,63 @@ impl SendBuf {
     }
 
     // pub fn recv_and_drop(&mut self, ack_set: &[u64], unack_set: &[u64],len: usize) {
-    pub fn recv_and_drop(&mut self) {
+    pub fn recv_and_drop(&mut self, max_ack: u64) {
         if self.data.is_empty() {
             return;
         }
 
-        let mut iter = self.recv_index.iter();
-        self.data.retain(|_| *iter.next().unwrap());
+        let upper_bound = max_ack;
+        let keys_to_remove: Vec<_> = self.offset_index.range((Included(&0), Included(&upper_bound)))
+            .map(|(&key, &_value)| key)
+            .collect();
 
+        for key in keys_to_remove {
+            if let Some(value) = self.offset_index.remove(&key) {
+                self.recv_index[value as usize] = false;
+            }
+        }
+
+
+        let mut iter = self.recv_index.iter();
+        println!("Before dropping, data len: {:?}, recv_index len: {:?}, offset_index len: {:?}",self.data.len(),self.recv_index.len(),self.offset_index.len());
+        self.data.retain(|_| *iter.next().unwrap());
         self.recv_index.clear();
-        // for i in ack_set{
-        //     let index_off = self.offset_index.get(&i).unwrap() - self.removed;   
-        //     if self.data.get(index_off.try_into().unwrap()).is_some(){
-        //         let ack_len = self.data.get(index_off.try_into().unwrap()).unwrap().len();
-        //         self.used_length = self.used_length - ack_len;   
-        //         self.data.remove(index_off.try_into().unwrap());
-        //         self.index -= 1;
-        //         self.removed +=1;          
-        //     }        
-        // }
         // self.retransmit(unack_set);
+        self.index = self.data.len() as u64;
+        let mut counter = 0;
+        for (_, val) in self.offset_index.iter_mut() {
+            *val = counter;
+            counter += 1;
+            self.recv_index.push(true);
+        }
+        println!("After dropping, data len: {:?}, recv_index len: {:?}, offset_index len: {:?}",self.data.len(),self.recv_index.len(),self.offset_index.len());
+         
   
     }
 
 
     pub fn ack_and_drop(&mut self, offset:u64){
+        /*println!("ack_and_drop: {:?}",offset);
+        for (key, val) in self.offset_index.iter(){
+            println!("Akey: {:?}, Avak: {:?}",key,val);
+        }*/
         let index = self.offset_index.get(&offset).unwrap();
-        self.recv_index[*index as usize]=true;
+        self.recv_index[*index as usize]=false;
+        // self.drop_pkts = self.drop_pkts - 1;
     }
 
 
-    pub fn retransmit(&mut self, unack_set:&[u64]) {
-        for i in unack_set{
-            let position = self.pos;
-            let b = self.data.get((self.offset_index.get(&i).unwrap() - self.removed).try_into().unwrap());  
-            self.offset_index.entry(*i).or_insert(position.try_into().unwrap());   
-            let index_off = self.offset_index.get(&i).unwrap() - self.removed;   
-            self.data.remove(index_off.try_into().unwrap());
-            self.index -= 1;
-            self.removed +=1;
-        }
-    }
+    // pub fn retransmit(&mut self, unack_set:&[u64]) {
+    //     for i in unack_set{
+    //         let position = self.pos;
+    //         let b = self.data.get((self.offset_index.get(&i).unwrap() - self.removed).try_into().unwrap());  
+    //         self.offset_index.entry(*i).or_insert(position.try_into().unwrap());   
+    //         let index_off = self.offset_index.get(&i).unwrap() - self.removed;   
+    //         self.data.remove(index_off.try_into().unwrap());
+    //         self.index -= 1;
+    //         self.removed +=1;
+    //     }
+    // }
 
 
     ////rewritetv
@@ -1788,6 +1889,20 @@ impl SendBuf {
         self.max_data 
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn len(&self) -> usize{
+        let mut length = 0;
+        if self.data.is_empty(){
+            return 0;
+        }
+        for item in self.data.iter(){
+            length += item.data.len();
+        }
+        length
+    }
     /// Returns true if the stream was stopped before completion.
     pub fn is_stopped(&self) -> bool {
         self.error.is_some()
@@ -1799,7 +1914,7 @@ impl SendBuf {
 
 mod recovery;
 mod packet;
-mod minmax;
+// mod minmax;
 use recovery::Recovery;
 
 pub use crate::recovery::CongestionControlAlgorithm;

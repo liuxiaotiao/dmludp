@@ -16,22 +16,22 @@ use crate::Config;
 #[cfg(feature = "qlog")]
 use qlog::events::EventData;
 
-use self::NewCubic::State;
+// use self::NewCubic::State;
 
 // Loss Recovery
-const C: f64 = 8.0;
+// const C: f64 = 8.0;
 
-const INITIAL_TIME_THRESHOLD: f64 = 9.0 / 8.0;
+// const INITIAL_TIME_THRESHOLD: f64 = 9.0 / 8.0;
 
-const GRANULARITY: Duration = Duration::from_millis(1);
+// const GRANULARITY: Duration = Duration::from_millis(1);
 
 const INITIAL_RTT: Duration = Duration::from_millis(333);
 
-const PERSISTENT_CONGESTION_THRESHOLD: u32 = 3;
+// const PERSISTENT_CONGESTION_THRESHOLD: u32 = 3;
 
-const RTT_WINDOW: Duration = Duration::from_secs(300);
+// const RTT_WINDOW: Duration = Duration::from_secs(300);
 
-const MAX_PTO_PROBES_COUNT: usize = 2;
+// const MAX_PTO_PROBES_COUNT: usize = 2;
 
 // Congestion Control
 // const INITIAL_WINDOW_PACKETS: usize = 10;
@@ -41,27 +41,29 @@ const ELICT_ACK_CONSTANT: usize = 8;
 
 const MINIMUM_WINDOW_PACKETS: usize = 2;
 
-const LOSS_REDUCTION_FACTOR: f64 = 0.5;
+// const LOSS_REDUCTION_FACTOR: f64 = 0.5;
 
-const PACING_MULTIPLIER: f64 = 1.25;
+// const PACING_MULTIPLIER: f64 = 1.25;
 
 // How many non ACK eliciting packets we send before including a PING to solicit
 // an ACK.
-const MAX_OUTSTANDING_NON_ACK_ELICITING: usize = 24;
+// const MAX_OUTSTANDING_NON_ACK_ELICITING: usize = 24;
 
-const RECORD_LEN:usize = u16::MAX as usize;
+// const RECORD_LEN:usize = u16::MAX as usize;
+
+const PACKET_SIZE: usize = 1200;
 #[derive(Copy, Clone)]
 pub struct Recovery {
     ///befre min_acked_pkt number, all packetes are processed, received or timeout
-    min_acked_pkt: u64,
+    // min_acked_pkt: u64,
 
-    max_acked_pkt: u64,
+    // max_acked_pkt: u64,
     //All packets has default priority is 3, and this priority recording will be retained untill one iteration training data is transmitted.
-    pkt_priority: [u8;RECORD_LEN],
+    // pkt_priority: [u8;RECORD_LEN],
     
-    priority_record: [u8;RECORD_LEN],
+    // priority_record: [u8;RECORD_LEN],
     /// ask last 8 sent packets
-    ack_pkts: [u64;8],
+    // ack_pkts: [u64;8],
 
     loss_detection_timer: Option<Instant>,
 
@@ -73,12 +75,12 @@ pub struct Recovery {
 
     rttvar: Duration,
 
-    time_of_last_sent_ack_eliciting_pkt:
-        [Option<Instant>; 3],
+    // time_of_last_sent_ack_eliciting_pkt:
+    //     [Option<Instant>; 3],
 
-    largest_acked_pkt: [u64; 3],
+    // largest_acked_pkt: [u64; 3],
 
-    largest_sent_pkt: [u64; 3],
+    // largest_sent_pkt: [u64; 3],
   
     // minmax_filter: minmax::Minmax<Duration>,
 
@@ -103,7 +105,9 @@ pub struct Recovery {
 
     max_datagram_size: usize,
     k:f64,
+    incre_win: usize,
 
+    decre_win: usize,
 }
 
 pub struct RecoveryConfig {
@@ -132,11 +136,11 @@ impl Recovery {
         Recovery {
             loss_detection_timer: None,
 
-            time_of_last_sent_ack_eliciting_pkt: [None; 3],
+            // time_of_last_sent_ack_eliciting_pkt: [None; 3],
 
-            largest_acked_pkt: [std::u64::MAX; 3],
+            // largest_acked_pkt: [std::u64::MAX; 3],
 
-            largest_sent_pkt: [0; 3],
+            // largest_sent_pkt: [0; 3],
 
             latest_rtt: Duration::ZERO,
 
@@ -171,17 +175,18 @@ impl Recovery {
 
             app_limited: false,
 
-            min_acked_pkt:0,
-            max_acked_pkt:0,
+            // min_acked_pkt:0,
+            // max_acked_pkt:0,
 
-            pkt_priority: [0; RECORD_LEN],
-            priority_record: [0; RECORD_LEN],
+            // pkt_priority: [0; RECORD_LEN],
+            // priority_record: [0; RECORD_LEN],
 
-            max_datagram_size:1200,
-            ack_pkts: [0;8],
+            max_datagram_size:PACKET_SIZE,
+            // ack_pkts: [0;8],
 
             k: 1.8,
-
+            incre_win: 0,
+            decre_win: 0,
 
         }
     }
@@ -207,9 +212,18 @@ impl Recovery {
     //x = [0:0.1:3.6];
     //y = -8*(x-1.8).^3/1.8^3;
     pub fn update_win(&mut self,weights:f32, num: f64){
-        
-        let winadd = (-C * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3)) * self.max_datagram_size as f64;
-        self.congestion_window += ((winadd/4.0)*4.0) as usize;
+    //    let test1 = (weights as f64- (self.k*num)/8.0).powi(3);
+    //    let test2 = (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
+    //    let test3 = -C * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
+    //    println!("weights: {:?}, num: {:?},smallwin: {:?}", weights, num,test3);
+       // let winadd = (-C * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3)) * self.max_datagram_size as f64;
+       let winadd = (-num * (weights as f64 - (self.k*num)/8.0).powi(3)/((self.k*num)/8.0).powi(3)) * self.max_datagram_size as f64;
+       //self.congestion_window += ((winadd/4.0)*4.0) as usize;
+       if winadd > 0.0{
+            self.incre_win += winadd as usize;
+        }else {
+            self.decre_win += (-winadd) as usize;
+        }
     }
 
 
@@ -230,10 +244,15 @@ impl Recovery {
     }
     ///modified
     pub fn cwnd(&mut self) -> usize {
-        if self.congestion_window >=  1024*INITIAL_WINDOW_PACKETS{
+        let tmp_win = 2*self.incre_win - self.decre_win;
+        self.congestion_window = tmp_win;
+        println!("add: {:?}, minus: {:?}, tmp_win: {:?}", self.incre_win, self.decre_win, tmp_win);
+        self.incre_win = 0;
+        self.decre_win = 0;
+        if self.congestion_window >=  PACKET_SIZE*INITIAL_WINDOW_PACKETS{
             self.congestion_window
         }else{
-            self.congestion_window = 1024*INITIAL_WINDOW_PACKETS;
+            self.congestion_window = PACKET_SIZE*INITIAL_WINDOW_PACKETS;
             self.congestion_window
         }
         
@@ -393,12 +412,12 @@ pub struct Acked {
 
 
 
-fn sub_abs(lhs: Duration, rhs: Duration) -> Duration {
-    if lhs > rhs {
-        lhs - rhs
-    } else {
-        rhs - lhs
-    }
-}
+// fn sub_abs(lhs: Duration, rhs: Duration) -> Duration {
+//     if lhs > rhs {
+//         lhs - rhs
+//     } else {
+//         rhs - lhs
+//     }
+// }
 
 mod NewCubic;
