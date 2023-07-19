@@ -552,6 +552,7 @@ impl Connection {
             }else {
                 self.pkt_num_spaces[0].recv_pkt_num.update_item(hdr.offset, hdr.priority as usize);
             }
+            println!("offset: {:?}, length: {:?}",hdr.offset,hdr.pkt_length);
         }
 
         if hdr.ty == packet::Type::Stop{
@@ -704,7 +705,7 @@ impl Connection {
         let mut psize:u64 = 0;
 
         let ty = self.write_pkt_type()?; 
-
+        println!("Send Type: {:?}",ty);
         let info = SendInfo {
             from: self.localaddr,
             to: self.peeraddr,
