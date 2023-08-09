@@ -6,7 +6,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::Config;
-use std::collections::BTreeSet;
 
 
 // use crate::frame;
@@ -39,10 +38,8 @@ const INITIAL_RTT: Duration = Duration::from_millis(333);
 const INITIAL_WINDOW_PACKETS: usize = 8;
 
 const ELICT_ACK_CONSTANT: usize = 8;
-
-const MINIMUM_WINDOW_PACKETS: usize = 2;
-
 const INI_WIN: usize = 1200 * 8;
+const MINIMUM_WINDOW_PACKETS: usize = 2;
 
 // const LOSS_REDUCTION_FACTOR: f64 = 0.5;
 
@@ -55,8 +52,7 @@ const INI_WIN: usize = 1200 * 8;
 // const RECORD_LEN:usize = u16::MAX as usize;
 
 const PACKET_SIZE: usize = 1200;
-// #[derive(Copy, Clone)]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Recovery {
     ///befre min_acked_pkt number, all packetes are processed, received or timeout
     // min_acked_pkt: u64,
@@ -112,10 +108,7 @@ pub struct Recovery {
     incre_win: usize,
 
     decre_win: usize,
-
-    former_win_vecter: BTreeSet<usize>,
-
-    roll_back_flag: bool,
+    former_win: usize,
 }
 
 pub struct RecoveryConfig {
@@ -192,14 +185,10 @@ impl Recovery {
             max_datagram_size:PACKET_SIZE,
             // ack_pkts: [0;8],
 
-            k: 1.0,
+            k: 1.2,
             incre_win: 0,
             decre_win: 0,
-
-            former_win_vecter:BTreeSet::<usize>::new(),
-
-            roll_back_flag: false,
-
+            former_win: INI_WIN,
         }
     }
 
@@ -224,24 +213,14 @@ impl Recovery {
     //x = [0:0.1:3.6];
     //y = -8*(x-1.8).^3/1.8^3;
     pub fn update_win(&mut self,weights:f32, num: f64){
-    //    let test1 = (weights as f64- (self.k*num)/8.0).powi(3);
-    //    let test2 = (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
-    //    let test3 = -C * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
-    //    println!("weights: {:?}, num: {:?},smallwin: {:?}", weights, num,test3);
+       /* let test1 = (weights as f64- (self.k*num)/8.0).powi(3);
+        let test2 = (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
+        let test3 = -num * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3);
+        println!("weights: {:?}, num: {:?},smallwin: {:?}", weights, num,test3);*/
        // let winadd = (-C * (weights as f64- (self.k*num)/8.0).powi(3)/self.k.powi(3)) * self.max_datagram_size as f64;
-        // let winadd = (-num * (weights as f64 - (self.k*num)/8.0).powi(3)/((self.k*num)/8.0).powi(3)) * self.max_datagram_size as f64;
-        let mut winadd = 0.0;
-        if weights < 0.2 || weights > 1.8{
-            winadd = (-22.94 * (weights as f64).powi(3) + 65.83 * (weights as f64).powi(2) - 51.89 * (weights as f64) + 8.0) * self.max_datagram_size as f64;
-        }else {
-            winadd = (-0.1587 * (weights as f64).powi(3) - 0.4658 * (weights as f64).powi(2) - 0.4538 * (weights as f64) + 0.1535) * self.max_datagram_size as f64;
-        }
-        if winadd != num{
-            self.roll_back_flag = true;
-        }
-
-        //self.congestion_window += ((winadd/4.0)*4.0) as usize;
-        if winadd > 0.0{
+       let winadd = (-num * (weights as f64 - (self.k*num)/8.0).powi(3)/((self.k*num)/8.0).powi(3)) * self.max_datagram_size as f64;
+       //self.congestion_window += ((winadd/4.0)*4.0) as usize;
+       if winadd > 0.0{
             self.incre_win += winadd as usize;
         }else {
             self.decre_win += (-winadd) as usize;
@@ -266,17 +245,19 @@ impl Recovery {
     }
     ///modified
     pub fn cwnd(&mut self) -> usize {
+        println!("incre_win:{:?}, decre_win:{:?}",self.incre_win,self.decre_win);
         let mut tmp_win:usize=0;
         if 2*self.incre_win > self.decre_win{
             tmp_win = 2*self.incre_win - self.decre_win;
         }else{
             tmp_win = 0;
         }
-        if !self.roll_back_flag {
-            self.former_win_vecter.insert(tmp_win);
-        }
         self.congestion_window = tmp_win;
         println!("add: {:?}, minus: {:?}, tmp_win: {:?}", self.incre_win, self.decre_win, tmp_win);
+                if self.decre_win == 0{
+                    println!("former_win: {:?}",tmp_win);
+            self.former_win = tmp_win;
+        }
         self.incre_win = 0;
         self.decre_win = 0;
         if self.congestion_window >=  PACKET_SIZE*INITIAL_WINDOW_PACKETS{
@@ -337,16 +318,12 @@ impl Recovery {
     pub fn app_limited(&self) -> bool {
         self.app_limited
     }
-    
-    pub fn rollback(&mut self) -> usize{
-        if self.former_win_vecter.is_empty(){
-            self.congestion_window = INI_WIN;
-        }else{
-            self.congestion_window = self.former_win_vecter.pop_last().unwrap();
-        }
-        
+
+        pub fn rollback(&mut self) -> usize{
+        self.congestion_window = self.former_win;
         self.congestion_window
     }
+
     // pub fn delivery_rate_update_app_limited(&mut self, v: bool) {
     //     self.delivery_rate.update_app_limited(v);
     // }
@@ -460,4 +437,3 @@ pub struct Acked {
 // }
 
 mod NewCubic;
-

@@ -18,12 +18,13 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 // use std::vec;
 // use rand::Rng;
-use std::ops::Bound::Included;
+// use std::ops::Bound::Included;
 
 const HEADER_LENGTH: usize = 26;
 
-
+const ELICT_FLAG: usize = 8;
 // use crate::ranges;
+const CONGESTION_THREAHOLD: f64 = 0.01;
 
 /// The minimum length of Initial packets sent by a client.
 pub const MIN_CLIENT_INITIAL_LEN: usize = 1350;
@@ -354,7 +355,7 @@ pub struct Connection {
 
     // off: u64,
 
-    sent_pkt:Vec<u64>,
+    sent_pkt: Vec<u64>,
 
     // recv_pkt:Vec<u64>,
 
@@ -385,6 +386,14 @@ pub struct Connection {
     max_off: u64,
 
     send_num: u64,
+
+    high_priority: usize,
+
+    sent_number: usize,
+
+    recv_pkt_sent_num: Vec<usize>,
+
+    sent_dic: HashMap<u64, u64>,
 }
 
 impl Connection {
@@ -484,6 +493,14 @@ impl Connection {
             max_off: 0,
 
             send_num: 0,
+
+            high_priority: 0,
+
+            sent_number: 0,
+
+            recv_pkt_sent_num:Vec::<usize>::new(),
+
+            sent_dic:HashMap::new(),
         };
 
         conn.recovery.on_init();
@@ -501,6 +518,11 @@ impl Connection {
             self.rtt = 17*arrive_time.duration_since(self.handshake)/16;
         }
         
+    }
+
+    pub fn new_rtt(& mut self, last: Duration){
+        println!("Pre rtt: {:?}, last: {:?}",self.rtt, last);
+        self.rtt = self.rtt/4 + 3*last/4;
     }
 
     pub fn recv_slice(&mut self, buf: &mut [u8]) ->Result<usize>{
@@ -531,7 +553,7 @@ impl Connection {
         if hdr.ty == packet::Type::ACK && self.is_server{
             //println!("{:?}",self.send_buffer.offset_index);
             self.process_ack(buf);
-            self.update_rtt();
+            //self.update_rtt();
         }
 
         if hdr.ty == packet::Type::ElictAck{
@@ -545,13 +567,9 @@ impl Connection {
             self.recv_count += 1;
             read = hdr.pkt_length as usize;
             self.rec_buffer.write(&mut buf[26..],hdr.offset).unwrap();
-            self.prioritydic.insert(hdr.offset, hdr.priority);
+            // self.prioritydic.insert(hdr.offset, hdr.priority);
             self.recv_dic.insert(hdr.offset, hdr.priority);
-            if self.pkt_num_spaces[0].recv_pkt_num.get_priority(hdr.offset) == 0{
-                self.pkt_num_spaces[0].recv_pkt_num.additem(hdr.offset, hdr.priority as usize);
-            }else {
-                self.pkt_num_spaces[0].recv_pkt_num.update_item(hdr.offset, hdr.priority as usize);
-            }
+            println!("offset: {:?}, length: {:?}", hdr.offset, hdr.pkt_length);
         }
 
         if hdr.ty == packet::Type::Stop{
@@ -564,6 +582,7 @@ impl Connection {
     pub fn send_ack(&self)->bool{
         self.feed_back
     }
+    
     //Get unack offset. 
     fn process_ack(&mut self, buf: &mut [u8]){
         let unackbuf = &buf[26..];
@@ -579,22 +598,32 @@ impl Connection {
         while start < len{
             let unack = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
             start += 8;
-            let priority = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
+            let mut priority = u64::from_be_bytes(unackbuf[start..start+8].try_into().unwrap());
+            if let Some(recviecd) = self.sent_dic.get(&unack){
+                if *recviecd == 0{
+                    self.send_buffer.ack_and_drop(unack);
+                }
+            }
+            if priority != 0{
+                priority = self.priority_calculation(unack) as u64;
+            }
             start += 8;
             if priority == 1{
-                weights += 0.1;
+                weights += 0.15;
             }else if priority == 2 {
                 weights += 0.2;
             }else if priority == 3 {
-                weights += 0.45;
+                weights += 0.25;
             }else{
-                //println!("offset: {:?}, received",unack);
+                println!("offset: {:?}, received",unack);
                 self.send_buffer.ack_and_drop(unack);
-                self.send_buffer.offset_index.remove(&unack);
-                println!("Send_buffer.offset_index.len(): {:?}",self.send_buffer.offset_index.len());
             }
+            let real_priority = self.priority_calculation(unack);
             println!("offset: {:?}, priority: {:?}",unack,priority);
-
+            println!("offset: {:?}, real priority: {:?}",unack,self.priority_calculation(unack));
+            if priority != 0 && real_priority == 3{
+                self.high_priority += 1;
+            }
         }
 
         ///////////////////////////////////////////////////////////////////////
@@ -653,8 +682,8 @@ impl Connection {
         println!("Before: recv_index.len: {:?}",self.send_buffer.recv_index.len());
         for (key, val) in self.send_buffer.offset_index.iter(){
             println!("key: {:?}, val: {:?}",key,val);
-        }
-        println!("data len: {:?}",self.send_buffer.data.len());*/
+        }*/
+        println!("data len: {:?}",self.send_buffer.data.len());
 
         self.set_handshake();
 
@@ -679,8 +708,7 @@ impl Connection {
             let write = self.write();
             self.written_data += write.unwrap();
             self.total_offset += write.unwrap() as u64;
-                Ok(true)}
-
+            Ok(true)}
         }
         
     }
@@ -710,7 +738,6 @@ impl Connection {
             to: self.peeraddr,
         };
         if ty == packet::Type::Handshake && self.server{
-        // if ty == packet::Type::Handshake{
             let hdr = Header {
                 ty,
                 pkt_num: pn,
@@ -720,14 +747,10 @@ impl Connection {
             };
             let mut b = octets::OctetsMut::with_slice(out);
             hdr.to_bytes(&mut b)?;
-            // if self.server{
-            //     self.set_handshake();
-            // }
             self.set_handshake();
         }
 
         if ty == packet::Type::Handshake && !self.server{
-            // if ty == packet::Type::Handshake{
             let hdr = Header {
                 ty,
                 pkt_num: pn,
@@ -852,11 +875,17 @@ impl Connection {
                     return Err(Error::Done);
                 }            
                 self.sent_count += 1;
+                self.sent_number += 1;
                 let mut b = octets::OctetsMut::with_slice(&mut out[done..]);
                 pn = self.pkt_num_spaces[0].next_pkt_num;
                 println!("Application off: {:?}",off); 
                 priority = self.priority_calculation(off);
                 self.pkt_num_spaces[0].next_pkt_num += 1;
+                if let Some(x) = self.sent_dic.get_mut(&off) {
+                    *x -= 1;
+                }else {
+                    self.sent_dic.insert(off, priority as u64);
+                }
                 let hdr = Header {
                     ty,
                     pkt_num: pn,
@@ -935,9 +964,23 @@ impl Connection {
     //Writing data to send buffer.
     pub fn write(&mut self) -> Result<usize> {
         //?/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        let off_len = 1024 - (self.total_offset % 1024) as usize;
+        let toffset = self.total_offset % 1024;
+        let mut off_len: usize = 0;
+        if toffset % 1024 != 0{
+            off_len = 1024 - (self.total_offset % 1024) as usize;
+        }
+        let high_ratio = self.high_priority as f64 / self.sent_number as f64;
+        println!("hight_ratio: {:?}", high_ratio);
+        self.high_priority = 0;
+        self.sent_number = 0;
+        // let off_len = 1024 - (self.total_offset % 1024) as usize;
         //Note: written_data refers to the non-retransmitted data.
-        let congestion_window = self.recovery.cwnd();
+        let mut congestion_window = 0;
+        if high_ratio > CONGESTION_THREAHOLD{
+            congestion_window = self.recovery.rollback();
+        }else{
+            congestion_window = self.recovery.cwnd();
+        }
         println!("cwnd: {:?}", congestion_window);
         self.send_buffer.write(&self.send_data[self.written_data..], congestion_window, off_len, self.max_off)
     }
@@ -1020,14 +1063,12 @@ impl Connection {
         // let result:Vec<u64> = Vec::new();
         while b.cap()>0 {
             let offset = b.get_u64().unwrap();
-            // priority == 0 means that packet received
-            if self.pkt_num_spaces[0].recv_pkt_num.check_received(offset){
+            if self.recv_dic.contains_key(&offset){
                 self.recv_hashmap.insert(offset, 0);
-            }else {
-                self.recv_hashmap.insert(offset, self.pkt_num_spaces[0].recv_pkt_num.get_retrans_times(offset));
+            }else{
+                self.recv_hashmap.insert(offset, 1);
             }
         }
-
     }
 
     pub fn set_handshake(&mut self){
@@ -1142,7 +1183,7 @@ impl Connection {
             return Ok(packet::Type::Handshake);
         }
 
-        if (self.sent_count % 8 == 0 && self.sent_count > 0) || self.stop_flag == true{
+        if (self.sent_count % ELICT_FLAG == 0 && self.sent_count > 0) || self.stop_flag == true{
             self.sent_count = 0;
             return Ok(packet::Type::ElictAck);
         }
@@ -1579,11 +1620,13 @@ pub struct SendBuf {
     
     // Ranges of data offsets that have been acked.
     // acked: ranges::RangeSet,
-    offset_index: BTreeMap<u64,u64>,
+    // offset_index: BTreeMap<u64,u64>,
 
-    recv_index: Vec< bool>,
+    // recv_index: Vec<bool>,
 
-    index: u64,
+    offset_recv: BTreeMap<u64, bool>,
+
+    // index: u64,
 
     removed: u64,
 
@@ -1659,22 +1702,39 @@ impl SendBuf {
         // Split function to set priority and message size
         // let mut split_result = split(data);
 
+        println!("data.len(): {:?}, off_len: {:?}", data.len(), off_len);
         /////
-        if off_len > 0{
-            let first_buf = RangeBuf::from(&data[..off_len], self.off);
-            self.offset_index.insert( self.off,self.index);
+        if off_len > 0 {
+            if data.len() > off_len{
+            println!("data.len >> off_len");
+            let first_buf: RangeBuf = RangeBuf::from(&data[..off_len], self.off);
+            // self.offset_index.insert( self.off,self.index);
             // println!("Insert: offset: {:?}, index: {:?}",self.off, self.index);
-            self.index = self.index+1;
+            // self.index = self.index+1;
 
-            self.recv_index.push(true);
+            // self.recv_index.push(true);
+
+            self.offset_recv.insert(self.off, true);
 
             self.data.push_back(first_buf);
             self.off += off_len as u64;
             self.len += off_len as u64;
             self.used_length += off_len;
             len += off_len;
+            }else{
+                println!("data.len << off_len");
+                let first_buf: RangeBuf = RangeBuf::from(&data[..], self.off);
+                self.offset_recv.insert(self.off, true);
 
-        }     
+                self.data.push_back(first_buf);
+                self.off += data.len() as u64;
+                self.len += data.len() as u64;
+                self.used_length += data.len();
+                len += data.len();
+                return Ok(len);
+            }
+
+        }
         for chunk in data[off_len..].chunks(SEND_BUFFER_SIZE){
 
         // Split the remaining input data into consistently-sized buffers to
@@ -1685,10 +1745,12 @@ impl SendBuf {
 
             let buf = RangeBuf::from(chunk, self.off);
             
-            self.offset_index.insert( self.off,self.index);
+            // self.offset_index.insert( self.off,self.index);
+
+            self.offset_recv.insert(self.off, true);
             //println!("Insert: offset: {:?}, index: {:?}",self.off, self.index);
-            self.index = self.index + 1;
-            self.recv_index.push(true);
+            // self.index = self.index + 1;
+            // self.recv_index.push(true);
             // The new data can simply be appended at the end of the send buffer.
             self.data.push_back(buf);
 
@@ -1797,37 +1859,42 @@ impl SendBuf {
     }
 
     // pub fn recv_and_drop(&mut self, ack_set: &[u64], unack_set: &[u64],len: usize) {
-    pub fn recv_and_drop(&mut self, max_ack: u64) {
+    pub fn recv_and_drop(&mut self, _max_ack: u64) {
         if self.data.is_empty() {
             return;
         }
 
-        let upper_bound = max_ack;
-        let keys_to_remove: Vec<_> = self.offset_index.range((Included(&0), Included(&upper_bound)))
-            .map(|(&key, &_value)| key)
-            .collect();
+        // let upper_bound = max_ack;
+        // let keys_to_remove: Vec<_> = self.offset_index.range((Included(&0), Included(&upper_bound)))
+        //     .map(|(&key, &_value)| key)
+        //     .collect();
 
-        for key in keys_to_remove {
-            if let Some(value) = self.offset_index.remove(&key) {
-                self.recv_index[value as usize] = false;
-            }
-        }
+        // for key in keys_to_remove {
+        //     if let Some(value) = self.offset_index.remove(&key) {
+        //         self.recv_index[value as usize] = false;
+        //     }
+        // }
 
 
-        let mut iter = self.recv_index.iter();
-        println!("Before dropping, data len: {:?}, recv_index len: {:?}, offset_index len: {:?}",self.data.len(),self.recv_index.len(),self.offset_index.len());
+        // let mut iter = self.recv_index.iter();
+        // println!("Before dropping, data len: {:?}, recv_index len: {:?}, offset_index len: {:?}",self.data.len(),self.recv_index.len(),self.offset_index.len());
+        // self.data.retain(|_| *iter.next().unwrap());
+        // self.recv_index.clear();
+        // // self.retransmit(unack_set);
+        // self.index = self.data.len() as u64;
+        // let mut counter = 0;
+        // for (_, val) in self.offset_index.iter_mut() {
+        //     *val = counter;
+        //     counter += 1;
+        //     self.recv_index.push(true);
+        // }
+        
+        //println!("Before dropping, data len: {:?}, offset_recv len: {:?}",self.data.len(),self.offset_recv.len());
+        let recv_drop:Vec<bool> = self.offset_recv.values().cloned().collect();
+        let mut iter = recv_drop.iter();
         self.data.retain(|_| *iter.next().unwrap());
-        self.recv_index.clear();
-        // self.retransmit(unack_set);
-        self.index = self.data.len() as u64;
-        let mut counter = 0;
-        for (_, val) in self.offset_index.iter_mut() {
-            *val = counter;
-            counter += 1;
-            self.recv_index.push(true);
-        }
-        println!("After dropping, data len: {:?}, recv_index len: {:?}, offset_index len: {:?}",self.data.len(),self.recv_index.len(),self.offset_index.len());
-         
+        self.offset_recv.retain(|_, & mut v| v == true);
+        //println!("After dropping, data len: {:?}, offset_recv len: {:?}",self.data.len(),self.offset_recv.len());
   
     }
 
@@ -1837,8 +1904,11 @@ impl SendBuf {
         for (key, val) in self.offset_index.iter(){
             println!("Akey: {:?}, Avak: {:?}",key,val);
         }*/
-        let index = self.offset_index.get(&offset).unwrap();
-        self.recv_index[*index as usize]=false;
+        if let Some(x) = self.offset_recv.get_mut(&offset) {
+            *x = false;
+        }
+        // let index = self.offset_index.get(&offset).unwrap();
+        // self.recv_index[*index as usize]=false;
         // self.drop_pkts = self.drop_pkts - 1;
     }
 
@@ -1922,3 +1992,4 @@ pub use crate::packet::Header;
 pub use crate::packet::Type;
 #[cfg(feature = "ffi")]
 mod ffi;
+

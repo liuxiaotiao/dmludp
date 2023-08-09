@@ -49,7 +49,7 @@ pub struct Header {
     /// The type of the packet.
     pub ty: Type,
 
-    pub(crate) pkt_num: u64,
+    pub pkt_num: u64,
 
     pub priority:u8,
     ///This offset is different from TCP offset. It refers to the last position in the 
@@ -253,32 +253,48 @@ impl PktNumWindow {
     }
 
     //check the received or not and update the retranmission times
-    pub fn check_received(&mut self, offset: u64)->bool{
-        if self.record.contains_key(&offset){
-            let condition = self.record.get(&offset).unwrap();
-            let received = condition[1];
-            let retrans = condition[0];
-            if received == 1{
-                return true
-            }else {
-                if retrans > 0{
-                    self.update_retrans(offset, retrans-1, received);
+    pub fn check_received(&mut self, offset: u64, sent: bool)->bool{
+        if sent == false{
+            if self.record.contains_key(&offset){
+                let condition = self.record.get(&offset).unwrap();
+                let received = condition[1];
+                let retrans = condition[0];
+                if received == 1{
+                    return true
                 }else {
-                    self.update_retrans(offset, 0, 1);
+                    if retrans > 0{
+                        self.update_retrans(offset, retrans-1, received);
+                    }else {
+                        self.update_retrans(offset, 0, 1);
+                    }
+                    return false
+                }
+            }else {
+                //
+                let priority = self.get_priority(offset - offset%1024);
+                if priority == 0{
+                    self.additem(offset - offset%1024, 3);
+                    self.update_retrans(offset, 2, 0);
+                }else {
+                    self.update_retrans(offset, priority-1, 0);
                 }
                 return false
             }
-        }else {
-            //
-            let priority = self.get_priority(offset - offset%1024);
-            if priority == 0{
-                self.additem(offset - offset%1024, 3);
-                self.update_retrans(offset, 2, 0);
+        }else{
+            if self.record.contains_key(&offset){
+                let condition = self.record.get(&offset).unwrap();
+                let received = condition[1];
+                let _retrans = condition[0];
+                if received == 1{
+                    return true
+                }else {
+                    return false
+                }
             }else {
-                self.update_retrans(offset, priority-1, 0);
+                return false
             }
-            return false
         }
+        
     }
 
     pub fn get_retrans_times(& self, offset: u64)->u64{
