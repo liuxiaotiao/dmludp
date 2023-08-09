@@ -1,2 +1,2 @@
 # dmludp
-Retransmission depends on senders choice
+Retransmission depends on sender's choice
