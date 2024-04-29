@@ -331,9 +331,9 @@ public:
         return std::make_shared<Connection>(local, peer, config, true);
     };
 
-    const static uint8_t handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const static uint8_t handshake_header[HEADER_LENGTH] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    const static uint8_t fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const static uint8_t fin_header[HEADER_LENGTH] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -415,11 +415,11 @@ public:
     // };
 
     Type header_info(uint8_t* src, size_t src_len, uint64_t &pkt_num, uint8_t &pkt_priorty, uint64_t &pkt_offset, uint64_t &pkt_len){
-        auto pkt_ty = *reinterpret_cast<uint8_t *>(src);
-        pkt_num = *reinterpret_cast<uint64_t *>(src + Type_len);
-        pkt_priorty = *reinterpret_cast<uint8_t *>(src + Type_len + Packet_num_len);
-        pkt_offset = *reinterpret_cast<uint64_t *>(src + Type_len + Packet_num_len + Priority_len);
-        pkt_len = *reinterpret_cast<uint64_t *>(src + Type_len + Packet_num_len + Priority_len + Offset_len);
+        auto pkt_ty = reinterpret_cast<uint8_t *>(src)->ty;
+        pkt_num = reinterpret_cast<uint64_t *>(src)->pkt_num;
+        pkt_priorty = reinterpret_cast<uint8_t *>(src)->priority;
+        pkt_offset = reinterpret_cast<uint64_t *>(src)->offset;
+        pkt_len = reinterpret_cast<uint64_t *>(src)->pkt_length;
         return pkt_ty;
     }
 

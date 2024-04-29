@@ -72,11 +72,11 @@ inline void dmludp_config_free(Config* config){
 }
 
 inline int dmludp_header_info(uint8_t* data, size_t buf_len, int &off, int &pn) {
-    auto result = *reinterpret_cast<Header *>(data)->ty;
-    pn = *reinterpret_cast<Header *>(data)-> pkt_num;
-    auto pkt_priorty = *reinterpret_cast<Header *>(data)->priority;
-    off = *reinterpret_cast<Header *>(data)->offset;
-    auto pkt_len = *reinterpret_cast<Header *>(data)->pkt_length;
+    auto result = reinterpret_cast<Header *>(data)->ty;
+    pn = reinterpret_cast<Header *>(data)->pkt_num;
+    auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
+    off = reinterpret_cast<Header *>(data)->offset;
+    auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
     return result;
 }
 
