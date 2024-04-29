@@ -36,16 +36,16 @@ namespace dmludp{
 
             if(out_off > data_len){
 		        data.resize(out_off + out_len);
-		        memcpy(data.data() + data.size() - out_len, out.data(), out_len * sizeof(uint8_t));
+		        memcpy(data.data() + data.size() - out_len, out, out_len * sizeof(uint8_t));
             }
             else if(out_off == data_len){
 		        data.resize(out_off + out_len);
-                memcpy(data.data() + data.size() - out_len, out.data(), out_len * sizeof(uint8_t));
+                memcpy(data.data() + data.size() - out_len, out, out_len * sizeof(uint8_t));
             }
             else{
                 size_t startPos = out_off;
                 size_t endPos = out_off + out_len;
-                memcpy(data.data() + startPos, out.data(), out_len * sizeof(uint8_t));
+                memcpy(data.data() + startPos, out, out_len * sizeof(uint8_t));
             }
             len += out_len;
     	    // std::cout<<"[Debug] receive buffer len:"<<len<<" vector.size():"<<data.size()<<std::endl;
