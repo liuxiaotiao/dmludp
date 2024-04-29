@@ -126,7 +126,6 @@ int main() {
                 continue;
             }
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, rv);
-                                                                                                                                                                                                                                   125,27        26%
             auto written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
             break;
         }

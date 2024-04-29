@@ -331,9 +331,9 @@ public:
         return std::make_shared<Connection>(local, peer, config, true);
     };
 
-    const static handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const static uint8_t handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    const static fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const static uint8_t fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -390,7 +390,6 @@ public:
         }else{
             rtt = 17 * (arrive_time - handshake) / 16;
         }
-        last = 
     };
 
     void set_rtt(uint64_t inter){
@@ -403,19 +402,19 @@ public:
         rtt = rtt / 4 + 3 * std::chrono::nanoseconds(last)/4;
     };
 
-    uint64_t convertToUint64(const std::vector<uint8_t>& v){
-        uint64_t result = 0;
-        for (int i = 0; i < 8; ++i) {
-        #if  IS_BIG_ENDIAN
-            result |= static_cast<uint64_t>(v[i]) << (56 - i * 8);
-        #else
-            result |= static_cast<uint64_t>(v[i]) << i * 8;
-        #endif
-        }
-        return result;
-    };
+    // uint64_t convertToUint64(const std::vector<uint8_t>& v){
+    //     uint64_t result = 0;
+    //     for (int i = 0; i < 8; ++i) {
+    //     #if  IS_BIG_ENDIAN
+    //         result |= static_cast<uint64_t>(v[i]) << (56 - i * 8);
+    //     #else
+    //         result |= static_cast<uint64_t>(v[i]) << i * 8;
+    //     #endif
+    //     }
+    //     return result;
+    // };
 
-    Type header_info(const uint8_t* src, size_t src_len, uint64_t &pkt_num = 0, uint8_t &pkt_priorty = 0, uint64_t &pkt_offset = 0, uint64_t &pkt_len = 0){
+    Type header_info(uint8_t* src, size_t src_len, uint64_t &pkt_num, uint8_t &pkt_priorty, uint64_t &pkt_offset, uint64_t &pkt_len){
         auto pkt_ty = *reinterpret_cast<Header *>(src);
         pkt_num = *reinterpret_cast<Header *>(src) + Type_len;
         pkt_priorty = *reinterpret_cast<Header *>(src) + Type_len + Packet_num_len;
@@ -424,7 +423,7 @@ public:
         return pkt_ty;
     }
 
-    size_t recv_slice(const uint8_t* src, size_t src_len){
+    size_t recv_slice(uint8_t* src, size_t src_len){
         recv_count += 1;
 
         uint64_t pkt_num;
@@ -489,7 +488,7 @@ public:
             rec_buffer.write(src, src_len, pkt_offset);
             receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
             // Debug
-            recv_dic.insert(std::make_pair(pkt_offset, pkt_priority));
+            recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
         }
 
         // In dmludp.h
@@ -511,7 +510,7 @@ public:
 
 
     // remove unnessary vectore construct
-    void process_ack(const uint8_t* src, size_t src_len){
+    void process_ack(uint8_t* src, size_t src_len){
         // std::vector<uint8_t> ack_header(buf.begin(), buf.begin() + HEADER_LENGTH);
         // auto hd = Header::from_slice(ack_header);
 
@@ -1166,8 +1165,9 @@ public:
         auto pn = pkt_num_spaces.at(1).updatepktnum();
         Header* hdr = new Header(ty, pn, 0, 0, pktlen);
         out.resize(pktlen + HEADER_LENGTH);
-        hdr->to_bytes(out);
-        memcpy(out.data() + HEADER_LENGTH, record2ack.data(), out.size());
+        // hdr->to_bytes(out);
+        memcpy(out.data(), hdr, HEADER_LENGTH);
+        memcpy(out.data() + HEADER_LENGTH, record2ack.data(), record2ack.size());
         if(sent_num == record2ack.size()){
             record2ack.clear();
         }else{
@@ -1267,13 +1267,14 @@ public:
             Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
             pktlen += HEADER_LENGTH;
             out_buffer.resize(pktlen);
-            hdr->to_bytes(out_buffer);
-            memcpy(out_buffer.begin(), hdr, HEADER_LENGTH);
+            // hdr->to_bytes(out_buffer);
+            memcpy(out_buffer.data(),hdr, HEADER_LENGTH);
+            // memcpy(out_buffer.begin(), hdr, HEADER_LENGTH);
             ////
-            // std::vector<uint8_t> wait_ack(retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.end());
+            std::vector<uint8_t> wait_ack(retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.end());
             // std::copy(wait_ack.begin(), wait_ack.end(), out_buffer.begin() + HEADER_LENGTH);
 
-            memcpy(out_buffer.begin() + HEADER_LENGTH, retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.size());
+            memcpy(out_buffer.data() + HEADER_LENGTH, retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.size());
             ///
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             auto initial_pn = valueToKeys[n];
@@ -1637,7 +1638,7 @@ public:
     //     }
     // }
 
-    void check_loss_pktnum(const uint8_t* src, size_t src_len){
+    void check_loss_pktnum(uint8_t* src, size_t src_len){
         uint64_t start = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH);
         uint64_t end = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH + sizeof(uint64_t));
         // memcpy(&start, b.data(), sizeof(uint64_t));
@@ -1648,10 +1649,10 @@ public:
         for (auto pn = start; pn <= end; pn++){
             if (receive_pktnum2offset.find(pn) != receive_pktnum2offset.end()){
                 receive_result.push_back(0);
-                ack_record[pn] = 0;
+                // ack_record[pn] = 0;
             }else{
                 receive_result.push_back(1);
-                ack_record[pn] = 1;
+                // ack_record[pn] = 1;
             }          
         }
 

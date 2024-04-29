@@ -73,10 +73,10 @@ inline void dmludp_config_free(Config* config){
 
 inline int dmludp_header_info(uint8_t* data, size_t buf_len, int &off, int &pn) {
     auto result = (int)*reinterpret_cast<Header *>(data);
-    pn = *reinterpret_cast<Header *>(data) + Type_len;
-    auto pkt_priorty = *reinterpret_cast<Header *>(data) + Type_len + Packet_num_len;
-    off = *reinterpret_cast<Header *>(data) + Type_len + Packet_num_len + Priority_len;
-    auto pkt_len = *reinterpret_cast<Header *>(data) +  Type_len + Packet_num_len + Priority_len + Offset_len;
+    pn = *reinterpret_cast<Header *>(data + Type_len);
+    auto pkt_priorty = *reinterpret_cast<Header *>(data + Type_len + Packet_num_len);
+    off = *reinterpret_cast<Header *>(data + Type_len + Packet_num_len + Priority_len);
+    auto pkt_len = *reinterpret_cast<Header *>(data + Type_len + Packet_num_len + Priority_len + Offset_len);
     return result;
 }
 
@@ -215,7 +215,7 @@ inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
 //     return static_cast<ssize_t>(written);
 // }
 
-inline ssize_t dmludp_send_data_handshake(uint8_t* out, size_t out_len){
+inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
     if (out_len <= 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
@@ -259,7 +259,7 @@ inline ssize_t dmludp_conn_send(std::shared_ptr<Connection> conn, uint8_t* out, 
 
 
 // inline ssize_t dmludp_conn_recv(Connection* conn, const uint8_t* buf, size_t out_len){
-inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, const uint8_t* buf, size_t out_len){
+inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, uint8_t* buf, size_t out_len){
     if(out_len <= 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
@@ -267,7 +267,11 @@ inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, const uint8_t*
     size_t received = conn->recv_slice(buf, out_len);
     
     if (received == 0){
-        auto ty = conn->header_info(buf);
+        uint64_t pkt_num;
+        uint8_t pkt_priorty;
+        uint64_t pkt_offset;
+        uint64_t pkt_len;
+        auto ty = conn->header_info(buf, pkt_num, pkt_priorty, pkt_offset, pkt_len);
         if (ty == Type::Stop){
             return dmludp_error::DMLUDP_ERR_STOP;
         }

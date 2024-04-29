@@ -146,7 +146,7 @@ namespace dmludp{
             return std::make_shared<Header>(ty, second, third, forth, fifth);
         };
 
-        void to_bytes(uint8_t* out){
+        void to_bytes(std::vector<uint8_t> out){
             uint8_t first = 0;
             int off = 0;
             if (ty == Type::Retry){
