@@ -52,6 +52,10 @@ using Offset_len = uint64_t;
 
 using Packet_len = uint64_t;
 
+extern uint8_t handshake_header[HEADER_LENGTH] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+extern uint8_t fin_header [HEADER_LENGTH] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 struct SendInfo {
     /// The local address the packet should be sent from.
     sockaddr_storage from;
@@ -331,9 +335,9 @@ public:
         return std::make_shared<Connection>(local, peer, config, true);
     };
 
-    uint8_t handshake_header[HEADER_LENGTH];
+    const static uint8_t handshake_header[HEADER_LENGTH];
 
-    uint8_t fin_header[HEADER_LENGTH];
+    const static uint8_t fin_header[HEADER_LENGTH];
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -376,9 +380,7 @@ public:
     rx_length(0),
     dmludp_error_sent(0),
     start_receive_offset(0),
-    first_application_pktnum(0),
-    handshake_header{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    Connection::fin_heade{7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    first_application_pktnum(0)
     {};
 
     ~Connection(){
@@ -638,7 +640,6 @@ public:
             send_buffer.recv_and_drop();
         }    
     }
-
 
 
     uint8_t findweight(uint64_t unack){
@@ -1461,12 +1462,14 @@ public:
         auto ty = write_pkt_type(); 
 
         if (ty == Type::Handshake && server){
-            out = handshake_header;
+            // out = handshake_header;
+            memcpy(out, handshake_header, HEADER_LENGTH);
             set_handshake();
         }
 
         if (ty == Type::Handshake && !server){
-            out = handshake_header;
+            // out = handshake_header;
+            memcpy(out, handshake_header, HEADER_LENGTH);
             feed_back = false;
             initial = true;
         }
@@ -1521,8 +1524,8 @@ public:
 
     size_t send_data_handshake(uint8_t* out){     
         size_t total_len = HEADER_LENGTH;
-        out = handshake_header;
-
+        // out = handshake_header;
+        memcpy(out, handshake_header, HEADER_LENGTH);
         return total_len;
     };
 
@@ -1773,5 +1776,7 @@ public:
     }
 };
 
+const uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+const uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 }
