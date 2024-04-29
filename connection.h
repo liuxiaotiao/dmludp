@@ -415,11 +415,11 @@ public:
     // };
 
     Type header_info(uint8_t* src, size_t src_len, uint64_t &pkt_num, uint8_t &pkt_priorty, uint64_t &pkt_offset, uint64_t &pkt_len){
-        auto pkt_ty = *reinterpret_cast<Header *>(src);
-        pkt_num = *reinterpret_cast<Header *>(src) + Type_len;
-        pkt_priorty = *reinterpret_cast<Header *>(src) + Type_len + Packet_num_len;
-        pkt_offset = *reinterpret_cast<Header *>(src) + Type_len + Packet_num_len + Priority_len;
-        pkt_len = *reinterpret_cast<Header *>(src) +  Type_len + Packet_num_len + Priority_len + Offset_len;
+        auto pkt_ty = *reinterpret_cast<uint8_t *>(src);
+        pkt_num = *reinterpret_cast<uint64_t *>(src + Type_len);
+        pkt_priorty = *reinterpret_cast<uint8_t *>(src + Type_len + Packet_num_len);
+        pkt_offset = *reinterpret_cast<uint64_t *>(src + Type_len + Packet_num_len + Priority_len);
+        pkt_len = *reinterpret_cast<uint64_t *>(src + Type_len + Packet_num_len + Priority_len + Offset_len);
         return pkt_ty;
     }
 
@@ -1274,7 +1274,7 @@ public:
             std::vector<uint8_t> wait_ack(retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.end());
             // std::copy(wait_ack.begin(), wait_ack.end(), out_buffer.begin() + HEADER_LENGTH);
 
-            memcpy(out_buffer.data() + HEADER_LENGTH, retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.size());
+            memcpy(out_buffer.data() + HEADER_LENGTH, retransmission_ack.at(n).first.data(), retransmission_ack.at(n).first.size());
             ///
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             auto initial_pn = valueToKeys[n];
@@ -1410,9 +1410,9 @@ public:
             out.resize(pktlen + HEADER_LENGTH);
             // hdr->to_bytes(out);
             memcpy(out.data(), hdr, HEADER_LENGTH);
-            // std::vector<uint8_t> wait_ack(retransmission_ack.at((uint64_t)pn).first.begin(), retransmission_ack.at((uint64_t)pn).first.end());
+            std::vector<uint8_t> wait_ack(retransmission_ack.at((uint64_t)pn).first.begin(), retransmission_ack.at((uint64_t)pn).first.end());
             // std::copy(wait_ack.begin(), wait_ack.end(), out.begin() + HEADER_LENGTH);
-            memcpy(out.data() + HEADER_LENGTH, retransmission_ack.at((uint64_t)pn).first.begin(), retransmission_ack.at((uint64_t)pn).first.size());
+            memcpy(out.data() + HEADER_LENGTH, retransmission_ack.at((uint64_t)pn).first.data(), retransmission_ack.at((uint64_t)pn).first.size());
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             //// date: 1/28/2024
             auto initial_pn = valueToKeys[(uint64_t)pn];
