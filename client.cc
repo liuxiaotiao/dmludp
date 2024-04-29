@@ -15,9 +15,9 @@
 #include <vector>
 #include <cstdint>  // 包含 uint8_t 的定义
 #include <arpa/inet.h>
-#define PORT 12345
+#define PORT 12356
 #define MAX_EVENTS 10
-#define SERVER_IP "10.10.1.5"
+#define SERVER_IP "10.10.1.1"
 
 int main() {
     int client_fd, epoll_fd;
@@ -49,8 +49,8 @@ int main() {
     peer->sin_port = htons(PORT);   
 
     // 设置 IP 地址
-    inet_pton(AF_INET, "10.10.1.5", &(local->sin_addr));  
-    inet_pton(AF_INET, "10.10.1.4", &(peer->sin_addr));   
+    inet_pton(AF_INET, "10.10.1.2", &(local->sin_addr));  
+    inet_pton(AF_INET, "10.10.1.1", &(peer->sin_addr));   
 
     if (bind(client_fd, (const struct sockaddr *)local, sizeof(*local)) < 0) {
         std::cerr << "Bind failed" << std::endl;
@@ -90,6 +90,7 @@ int main() {
             int type = 0;
             int pktnum = 0;
             auto header = dmludp_header_info(buffer, 26, type, pktnum);
+	    std::cout<<(int)header<<std::endl;
             if(header != 2){
                 continue;
             }
@@ -118,7 +119,7 @@ int main() {
         return -1;
     }
     dmludp_conn_recv_reset(dmludp_connection);
-    dmludp_conn_rx_len(dmludp_connection, 1493962106);
+    dmludp_conn_rx_len(dmludp_connection, 1131413504);
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
@@ -164,6 +165,9 @@ int main() {
                                     uint8_t out[1500];
                                     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                                     ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+				    if(dmludp_conn_receive_complete(dmludp_connection)){
+					    return 0;
+				    }
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.

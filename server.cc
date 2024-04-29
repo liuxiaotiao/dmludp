@@ -15,12 +15,12 @@
 #include <vector>
 #include <cstdint>  // 包含 uint8_t 的定义
 #include <arpa/inet.h>
-#define PORT 12345
+#define PORT 12356
 #define MAX_EVENTS 10
-#define CLIENT_IP "10.10.1.4"
+#define CLIENT_IP "10.10.1.2"
 
 int main() {
-    std::ifstream file("randomfile.txt", std::ios::binary | std::ios::ate);
+    std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         std::cerr << "Error opening file" << std::endl;
         return 1;
@@ -65,12 +65,12 @@ int main() {
     peer->sin_family = AF_INET;
 
     // 设置端口号
-    local->sin_port = htons(PORT);  
-    peer->sin_port = htons(PORT);   
+    local->sin_port = htons(PORT);
+    peer->sin_port = htons(PORT);
 
     // 设置 IP 地址
-    inet_pton(AF_INET, "10.10.1.5", &(local->sin_addr));  
-    inet_pton(AF_INET, "10.10.1.4", &(peer->sin_addr));   
+    inet_pton(AF_INET, "10.10.1.1", &(local->sin_addr));
+    inet_pton(AF_INET, "10.10.1.2", &(peer->sin_addr));
 
     if (bind(server_fd, (const struct sockaddr *)local, sizeof(*local)) < 0) {
         std::cerr << "Bind failed" << std::endl;
@@ -108,6 +108,8 @@ int main() {
             }
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, rv);
             auto written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
+
+            std::cout<<std::endl;
             auto send_bytes = send(server_fd, out, written, 0);
             break;
         }
@@ -124,14 +126,14 @@ int main() {
                 continue;
             }
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, rv);
+                                                                                                                                                                                                                                   125,27        26%
             auto written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
-            auto send_bytes = send(server_fd, out, written, 0);
             break;
         }
     }else{
     }
 
-  
+
     epoll_fd = epoll_create1(0);
     if (epoll_fd == -1) {
         perror("epoll_create1 failed");
@@ -147,29 +149,37 @@ int main() {
         close(server_fd);
         return -1;
     }
+    struct mmsghdr msgs[100];
+    struct iovec iovecs[100];
+    uint8_t bufs[100][1500];
 
+    for (int i = 0; i < 100; i++) {
+        iovecs[i].iov_base = bufs[i];
+        iovecs[i].iov_len = sizeof(bufs[i]);
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+        msgs[i].msg_hdr.msg_name = NULL;
+        msgs[i].msg_hdr.msg_namelen = 0;
+    }
+    auto start = std::chrono::high_resolution_clock::now();
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
             perror("epoll_wait");
             break;
         }
-
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == server_fd) {
                 if (events[n].events & EPOLLIN){
-                    struct mmsghdr msgs[100];
-                    struct iovec iovecs[100];
-                    uint8_t bufs[100][1500];
-
-                    for (int i = 0; i < 100; i++) {
-                        iovecs[i].iov_base = bufs[i];
-                        iovecs[i].iov_len = sizeof(bufs[i]);
-                        msgs[i].msg_hdr.msg_iov = &iovecs[i];
-                        msgs[i].msg_hdr.msg_iovlen = 1;
-                        msgs[i].msg_hdr.msg_name = NULL;
-                        msgs[i].msg_hdr.msg_namelen = 0;
-                    }
+                /*      std::vector<std::vector<uint8_t>> out;
+                    std::set<std::chrono::high_resolution_clock::time_point> timestamps;
+                    auto result = dmludp_send_timeout_elicit_ack_message(dmludp_connection, out, timestamps);
+                    auto now = std::chrono::high_resolution_clock::now();
+                    if (result > 0){
+                        for(auto e : out){
+                        auto sent = ::send(server_fd, e.data(), e.size(), 0);
+                        }
+                    }*/
 
                     while(true){
                         auto retval = recvmmsg(server_fd, msgs, 100, 0, NULL);
@@ -179,7 +189,7 @@ int main() {
                             }
                             if (errno == EINTR){
                                 continue;
-                            }
+                                       }
                         }
                         for (auto index = 0; index < retval; index++){
                             auto read = msgs[index].msg_len;
@@ -205,23 +215,31 @@ int main() {
                                 // Application packet 
                                 }
                                 else if (rv == 5){
+                                    if(dmludp_transmission_complete(dmludp_connection)){
+                                        auto end = std::chrono::high_resolution_clock::now();
+                                        // 计算持续时间
+                                        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                                        // 输出执行时间
+                                        std::cout << "Duration: " << duration.count() << " milliseconds" << std::endl;
+                                        return 0;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                  
+
 
                 if (events[n].events & EPOLLOUT){
                     std::vector<std::vector<uint8_t>> out;
-                    std::set<std::chrono::high_resolution_clock::time_point> timestamps;      
+                    std::set<std::chrono::high_resolution_clock::time_point> timestamps;
                     auto result = dmludp_send_timeout_elicit_ack_message(dmludp_connection, out, timestamps);
                     auto now = std::chrono::high_resolution_clock::now();
                     if (result > 0){
                         for(auto e : out){
-                        auto sent = ::send(fd_, e.data(), e.size(), 0);
+                        auto sent = ::send(server_fd, e.data(), e.size(), 0);
                         }
-                    }  
+                    }
                     if (dmludp_transmission_complete(dmludp_connection)){
                         std::array<struct iovec, 1> siov;
                         siov[0].iov_base = data.data();
@@ -237,11 +255,10 @@ int main() {
                     std::vector<struct mmsghdr> messages;
                     std::vector<struct iovec> iovecs;
                     auto wlen= dmludp_data_send_mmsg(dmludp_connection, padding, messages, iovecs);
-
                     if (messages.size() == 0){
-                        return false;
+                        continue;
                     }
-	
+
                     size_t sent = 0;
                     auto has_error = dmludp_get_dmludp_error(dmludp_connection);
 
@@ -258,7 +275,7 @@ int main() {
                         if (errno == EAGAIN){
                             dmludp_set_error(dmludp_connection, EAGAIN, sent);
                         }
-                        return false;
+                        break;
                         }
                         sent += retval;
                     }
@@ -277,11 +294,6 @@ int main() {
                             auto socketwrite = ::send(server_fd, out.data(), out.size(), 0);
                         }
                     }
-                }
-                
-                if (dmludp_transmission_complete(dmludp_connection)){
-                    std::cout<<"complete"<<std::endl;
-                    break;
                 }
             }
         }
