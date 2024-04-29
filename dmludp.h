@@ -9,6 +9,17 @@
 
 
 using namespace dmludp;
+
+using Type_len = uint8_t;
+
+using Packet_num_len = uint64_t;
+
+using Priority_len = uint8_t;
+
+using Offset_len = uint64_t;
+
+using Packet_len = uint64_t;
+
 enum dmludp_error {
     // There is no more work to do.
     DMLUDP_ERR_DONE = -1,
@@ -61,28 +72,11 @@ inline void dmludp_config_free(Config* config){
 }
 
 inline int dmludp_header_info(uint8_t* data, size_t buf_len, int &off, int &pn) {
-    std::vector<uint8_t> buf(data, data + buf_len);
-    auto hdr = Header::from_slice(buf);
-    pn = hdr->pkt_num;
-    int result = 0;
-    off = (int)hdr->offset;
-    if (hdr->ty == Type::Retry){
-        result = 1;
-    }else if(hdr->ty == Type::Handshake){
-        result = 2;
-    }else if(hdr->ty == Type::Application){
-        result = 3;
-    }else if(hdr->ty == Type::ElicitAck){
-        result = 4;
-    }else if(hdr->ty == Type::ACK){
-        result = 5;
-    }else if(hdr->ty == Type::Stop){
-        result = 6;
-    }else if(hdr->ty == Type::Fin){
-        result = 7;
-    }else if(hdr->ty == Type::StartAck){
-        result = 8;
-    }
+    auto result = (int)*reinterpret_cast<Header *>(data);
+    pn = *reinterpret_cast<Header *>(data) + Type_len;
+    auto pkt_priorty = *reinterpret_cast<Header *>(data) + Type_len + Packet_num_len;
+    off = *reinterpret_cast<Header *>(data) + Type_len + Packet_num_len + Priority_len;
+    auto pkt_len = *reinterpret_cast<Header *>(data) +  Type_len + Packet_num_len + Priority_len + Offset_len;
     return result;
 }
 
@@ -135,13 +129,7 @@ inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
 }
 
 inline ssize_t dmludp_send_timeout_elicit_ack_message(std::shared_ptr<Connection> conn, std::vector<std::vector<uint8_t>> &out, std::set<std::chrono::high_resolution_clock::time_point> &timestamps){
-    // std::vector<std::vector<uint8_t>> out_vector(10);
-    // std::set<std::chrono::high_resolution_clock::time_point> outstampes;
     size_t written = conn->send_timeout_elicit_ack_message(out, timestamps);
-    // if ( written > 0){
-    //     out = std::move(out_vector);
-    //     timestamps = std::move(outstampes);
-    // }
     return written; 
 }
 
@@ -157,7 +145,7 @@ inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, 
 inline ssize_t dmludp_send_elicit_ack(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
     std::vector<uint8_t> out_vector(out_len);
     ssize_t written = conn->send_elicit_ack(out_vector);
-    if ( written > 0)
+    if (written > 0)
         memcpy(out, out_vector.data(), written);
     return written;
 }
@@ -192,13 +180,11 @@ inline long dmludp_is_empty(std::shared_ptr<Connection> conn){
 
 // inline ssize_t dmludp_send_data_stop(Connection* conn, uint8_t* out, size_t out_len){
 inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-    if (out_len <= 0 ){
+    if (out_len <= 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
-    std::vector<uint8_t> out_vector(out_len);
-    size_t written = conn->send_data_stop(out_vector);
-    memcpy(out, out_vector.data(), written);
+    size_t written = conn->send_data_stop(out);
     return static_cast<ssize_t>(written);
 }
 
@@ -217,15 +203,24 @@ inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
 }
 
 // inline ssize_t dmludp_send_data_handshake(Connection* conn, uint8_t* out, size_t out_len){
-inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-    if (out_len <= 0 ){
+// inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
+//     if (out_len <= 0 ){
+//         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
+//     }
+
+//     std::vector<uint8_t> out_vector(out_len);
+//     size_t written = conn->send_data_handshake(out_vector);
+//     std::copy(out_vector.begin(), out_vector.begin() + written, out);
+//     // memcpy(out, out_vector.data(), written);
+//     return static_cast<ssize_t>(written);
+// }
+
+inline ssize_t dmludp_send_data_handshake(uint8_t* out, size_t out_len){
+    if (out_len <= 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
-    std::vector<uint8_t> out_vector(out_len);
-    size_t written = conn->send_data_handshake(out_vector);
-    std::copy(out_vector.begin(), out_vector.begin() + written, out);
-    // memcpy(out, out_vector.data(), written);
+    size_t written = conn->send_data_handshake(out);
     return static_cast<ssize_t>(written);
 }
 
@@ -254,13 +249,7 @@ inline ssize_t dmludp_conn_send(std::shared_ptr<Connection> conn, uint8_t* out, 
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
-    std::vector<uint8_t> buf(out_len);
-
-    size_t written = conn->send_data(buf);
-    if (written){
-        memcpy(out, buf.data(), written);
-        return static_cast<ssize_t>(written);
-    }
+    size_t written = conn->send_data(out);
 
     if (conn->is_stopped()) {
         return dmludp_error::DMLUDP_ERR_DONE;
@@ -274,24 +263,20 @@ inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, const uint8_t*
     if(out_len <= 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
-
-    std::vector<uint8_t> recv_buf(buf, buf + out_len);
-
-    size_t received = conn->recv_slice(recv_buf, buf, out_len);
+    
+    size_t received = conn->recv_slice(buf, out_len);
     
     if (received == 0){
-        auto hdr = Header::from_slice(recv_buf);
-        auto ty = hdr->ty;
-        if (hdr->ty == Type::Stop){
+        auto ty = conn->header_info(buf);
+        if (ty == Type::Stop){
             return dmludp_error::DMLUDP_ERR_STOP;
         }
 
-        if (hdr->ty == Type::Fin){
+        if (ty == Type::Fin){
             return dmludp_error::DMLUDP_ERR_DONE;
         }
 
     }
-
     return static_cast<ssize_t>(received);
 
 }
