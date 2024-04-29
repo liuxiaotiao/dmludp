@@ -331,9 +331,9 @@ public:
         return std::make_shared<Connection>(local, peer, config, true);
     };
 
-    static uint8_t handshake_header[];
+    uint8_t handshake_header[HEADER_LENGTH];
 
-    static uint8_t fin_header[];
+    uint8_t fin_header[HEADER_LENGTH];
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -376,7 +376,9 @@ public:
     rx_length(0),
     dmludp_error_sent(0),
     start_receive_offset(0),
-    first_application_pktnum(0)
+    first_application_pktnum(0),
+    handshake_header{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    Connection::fin_heade{7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
     {};
 
     ~Connection(){
@@ -1770,7 +1772,6 @@ public:
         return length;
     }
 };
-uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 
 }
