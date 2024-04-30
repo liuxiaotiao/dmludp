@@ -1245,8 +1245,8 @@ public:
     // Time our occurs, timerfd triger this function and send retranmssion elicit ack.
     ssize_t send_timeout_elicit_ack_message(std::vector<std::vector<uint8_t>> &out, std::set<std::chrono::high_resolution_clock::time_point> &timestamps){
         auto ty = Type::ElicitAck;
-        size_t pktlen = 0; 
-        ssize_t pn = -1;
+        // size_t pktlen = 0; 
+        // ssize_t pn = -1;
         std::vector<uint64_t> pn_list;
         timestamps.clear();
         // Cancel timerfd.
@@ -1273,7 +1273,7 @@ public:
             uint64_t pktnum = pkt_num_spaces.at(1).updatepktnum();
             // std::cout<<"[Elicit] Elicit acknowledge packet(time out) num:"<<pktnum<<std::endl;
             // auto ty = Type::ElicitAck;
-            pktlen = retransmission_ack.at(n).first.size();
+            size_t pktlen = retransmission_ack.at(n).first.size();
             Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
             pktlen += HEADER_LENGTH;
             out_buffer.resize(pktlen);
@@ -1352,9 +1352,9 @@ public:
         // ack_point is used to mark how many ack sent.
         if (ack_point != pktnum){
             size_t pktlen = 0;
-            size_t end_point = 0;
+            // size_t end_point = 0;
 
-            size_t leftnum = pktnum - ack_point;
+            // size_t leftnum = pktnum - ack_point;
             if (pktnum - ack_point >= MAX_ACK_NUM){
                 pktlen = MAX_ACK_NUM * sizeof(uint64_t);
                 auto pn = pkt_num_spaces.at(1).updatepktnum();
@@ -1458,12 +1458,12 @@ public:
 
     //Send single packet
     size_t send_data(uint8_t* out){
-        size_t done = 0;
+        // size_t done = 0;
         size_t total_len = HEADER_LENGTH;
 
-        uint64_t pn = 0;
-        uint64_t offset = 0;
-        uint8_t priority = 0;
+        // uint64_t pn = 0;
+        // uint64_t offset = 0;
+        // uint8_t priority = 0;
         uint64_t psize = 0;
 
         auto ty = write_pkt_type(); 
@@ -1524,7 +1524,7 @@ public:
         delete hdr; 
         hdr = nullptr; 
 
-        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        // std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 
         return total_len;
     };

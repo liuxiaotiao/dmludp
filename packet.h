@@ -78,7 +78,7 @@ namespace dmludp{
         ~Header() {};
 
 
-        static std::shared_ptr<Header> from_slice(cosnt std::vector<uint8_t> &b){
+        static std::shared_ptr<Header> from_slice(cosnt std::vector<uint8_t>& b){
             int off = 0;
             auto first = get_u8(b, off);
             off += sizeof(uint8_t);
@@ -133,7 +133,7 @@ namespace dmludp{
                 ty_ = Type::Stop;
             }else if (first == 0x07){
                 ty_ = Type::Fin;
-            }else if (first = 0x08){
+            }else if (first == 0x08){
                 ty_ = Type::StartAck;
             }else{
                 ty_ = Type::Unknown;
