@@ -6,13 +6,13 @@
 namespace dmludp{
 
 // Congestion Control
-const size_t INITIAL_WINDOW_PACKETS = 8;
+const size_t INITIAL_WINDOW_PACKETS = 10;
 
-const size_t ELICT_ACK_CONSTANT = 8;
+const size_t ELICT_ACK_CONSTANT = 10;
 
 const size_t MINIMUM_WINDOW_PACKETS = 2;
 
-const size_t INI_WIN = 1350 * 8;
+const size_t INI_WIN = 1350 * 10;
 
 // const size_t PACKET_SIZE = 1200;
 const size_t PACKET_SIZE = 1350;

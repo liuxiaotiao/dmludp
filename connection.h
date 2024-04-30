@@ -399,7 +399,7 @@ public:
     };
 
     void new_rtt(uint64_t last){
-        rtt = rtt / 4 + 3 * std::chrono::nanoseconds(last)/4;
+        rtt = rtt / 4 + 3 * std::chrono::nanoseconds(last) / 4;
     };
 
     // uint64_t convertToUint64(const std::vector<uint8_t>& v){
@@ -466,7 +466,7 @@ public:
         }
 
         if (pkt_ty == Type::Application){
-            // std::cout<<"[Debug] application offset:"<<hdr->offset<<", pn:"<<hdr->pkt_num<<std::endl;
+            std::cout<<"[Debug] application offset:"<<hdr->offset<<", pn:"<<hdr->pkt_num<<std::endl;
             if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
@@ -862,6 +862,7 @@ public:
                 sent_count += 1;
                 sent_number += 1;
                 pn = pkt_num_spaces.at(0).updatepktnum();
+                std::cout<<"[pktnum] "<<pn<<std::endl;
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
@@ -870,7 +871,7 @@ public:
                 }
                 // counter?
                 // print address?
-                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off , (uint64_t)out_len);
+                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
                 hdrs.push_back(hdr);
                 iovecs[2*i].iov_base = (void *)hdr.get();
                 iovecs[2*i].iov_len = HEADER_LENGTH;
@@ -884,11 +885,11 @@ public:
                 out_off -= (uint64_t)out_len;
 
                 pn = first_application_pktnum + i;
-
+                std::cout<<"[11 pktnum] "<<pn<<std::endl;
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
-                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off , (uint64_t)out_len);
+                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
                 hdrs.push_back(hdr);
                 iovecs[2*(i-dmludp_error_sent)].iov_base = (void *)hdr.get();
                 iovecs[2*(i-dmludp_error_sent)].iov_len = HEADER_LENGTH;

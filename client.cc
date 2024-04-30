@@ -90,7 +90,6 @@ int main() {
             int type = 0;
             int pktnum = 0;
             auto header = dmludp_header_info(buffer, 26, type, pktnum);
-	        std::cout<<(int)header<<std::endl;
             if(header != 2){
                 continue;
             }
@@ -120,6 +119,7 @@ int main() {
     }
     dmludp_conn_recv_reset(dmludp_connection);
     dmludp_conn_rx_len(dmludp_connection, 1131413504);
+    size_t recv_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
@@ -166,7 +166,12 @@ int main() {
                                     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                                     ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
                                     if(dmludp_conn_receive_complete(dmludp_connection)){
-                                        return 0;
+                                        std::cout<<recv_time++<<" time receive complete"<<std::endl;
+                                        dmludp_conn_recv_reset(dmludp_connection);
+                                        if (recv_time == 100){
+                                            return 0;
+                                        }
+                                        
                                     }
                                 }
                                 else if (rv == 6){

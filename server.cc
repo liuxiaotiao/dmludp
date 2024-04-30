@@ -108,8 +108,6 @@ int main() {
             }
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, rv);
             auto written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
-
-            std::cout<<std::endl;
             auto send_bytes = send(server_fd, out, written, 0);
             break;
         }
@@ -161,6 +159,8 @@ int main() {
         msgs[i].msg_hdr.msg_namelen = 0;
     }
     auto start = std::chrono::high_resolution_clock::now();
+
+    size_t send_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
@@ -188,7 +188,7 @@ int main() {
                             }
                             if (errno == EINTR){
                                 continue;
-                                       }
+                            }
                         }
                         for (auto index = 0; index < retval; index++){
                             auto read = msgs[index].msg_len;
@@ -217,10 +217,22 @@ int main() {
                                     if(dmludp_transmission_complete(dmludp_connection)){
                                         auto end = std::chrono::high_resolution_clock::now();
                                         // 计算持续时间
-                                        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                                        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                                        dmludp_conn_clear_sent_once(dmludp_connection);
                                         // 输出执行时间
-                                        std::cout << "Duration: " << duration.count() << " milliseconds" << std::endl;
-                                        return 0;
+                                        std::cout << send_time++ << " Duration: " << duration.count() << " milliseconds" << std::endl;
+                                        if (send_time == 100){
+                                            return 0;
+                                        } 
+                                        start = std::chrono::high_resolution_clock::now();
+                                        std::array<struct iovec, 1> siov;
+                                        siov[0].iov_base = data.data();
+                                        siov[0].iov_len = data.size();
+                                        bool w2dmludp = dmludp_get_data(dmludp_connection, siov.data(), 1);
+
+                                        if (!w2dmludp){
+                                            return false;
+                                        }
                                     }
                                 }
                             }
@@ -240,6 +252,7 @@ int main() {
                         }
                     }
                     if (dmludp_transmission_complete(dmludp_connection)){
+                        start = std::chrono::high_resolution_clock::now();
                         std::array<struct iovec, 1> siov;
                         siov[0].iov_base = data.data();
                         siov[0].iov_len = data.size();
@@ -267,14 +280,15 @@ int main() {
                         if (retval == -1){
                         // Date: solve data cannot send out one time.
                         // Move errno == EINTR out of while(1)
-                        if (errno == EINTR){
-                            continue;
-                        }
+                            if (errno == EINTR){
+                                continue;
+                            }
 
-                        if (errno == EAGAIN){
-                            dmludp_set_error(dmludp_connection, EAGAIN, sent);
-                        }
-                        break;
+                            if (errno == EAGAIN){
+                                dmludp_set_error(dmludp_connection, EAGAIN, sent);
+                                std::cout<<"[EAGAIN] "<<sent<<std::endl;
+                            }
+                            break;
                         }
                         sent += retval;
                     }
