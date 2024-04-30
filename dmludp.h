@@ -156,9 +156,9 @@ inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
 
 // Fill up congestion control window
 // inline bool dmludp_conn_send_all(Connection* conn) {
-inline bool dmludp_conn_send_all(std::shared_ptr<Connection> conn) {
-    return conn->send_all();
-}
+// inline bool dmludp_conn_send_all(std::shared_ptr<Connection> conn) {
+//     return conn->send_all();
+// }
 
 // inline bool dmludp_conn_is_empty(Connection* conn){
 inline bool dmludp_conn_is_empty(std::shared_ptr<Connection> conn){
