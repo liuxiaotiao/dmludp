@@ -466,7 +466,7 @@ public:
         }
 
         if (pkt_ty == Type::Application){
-            std::cout<<"[Debug] application offset:"<<hdr->offset<<", pn:"<<hdr->pkt_num<<std::endl;
+            std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
             if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
@@ -862,7 +862,9 @@ public:
                 sent_count += 1;
                 sent_number += 1;
                 pn = pkt_num_spaces.at(0).updatepktnum();
-                std::cout<<"[pktnum] "<<pn<<std::endl;
+                if (i == 0){
+                    std::cout<<"[pktnum] "<<pn<<std::endl;
+                }     
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
@@ -955,6 +957,7 @@ public:
                         messages.resize(i + 1 - dmludp_error_sent);
                     }
                 }
+                std::cout<<"[Debug] i ="<<std::endl;
                 break;
             }
 
