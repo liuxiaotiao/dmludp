@@ -734,7 +734,7 @@ public:
         }
 
         send_buffer.off = 0;
-        if ( data_buffer.size() > 0 ){
+        if (data_buffer.size() > 0){
             completed = false;
             return completed;
         }
@@ -742,7 +742,7 @@ public:
             data_buffer.emplace_back(reinterpret_cast<uint8_t*>(iovecs[i].iov_base), iovecs[i].iov_len);
             written_data_once += iovecs[i].iov_len;
         }
-        if (data_buffer.size() <= 0){
+        if (data_buffer.size() == 0){
             completed = false;
         }
 
@@ -750,10 +750,10 @@ public:
             norm2_vec.clear();
         }
         size_t len = 0;
-        if (iovecs_len % 1350 == 0){
-            len = written_data_once / 1350;
+        if (iovecs_len % MAX_SEND_UDP_PAYLOAD_SIZE == 0){
+            len = written_data_once / MAX_SEND_UDP_PAYLOAD_SIZE;
         }else{
-            len = written_data_once / 1350 + 1;
+            len = written_data_once / MAX_SEND_UDP_PAYLOAD_SIZE + 1;
         }
         if (len == 1){
             norm2_vec.insert(norm2_vec.end(), len, 3);
@@ -1140,6 +1140,16 @@ public:
                 result = false;
             }
         }
+
+        bool test_result = !std::any_of(data_buffer.begin(), data_buffer.end(), [](const sbuffer& i) {
+            return i.left != 0;
+        });
+        
+        if (test_result != result){
+            std::cout<<"test_result != result"<<std::endl;
+            _Exit(0);
+        }
+
         if (send_buffer.data.size() != 0 || send_buffer.offset_recv.size() != 0){
             result = false;
         }
@@ -1346,7 +1356,7 @@ public:
 
             size_t leftnum = pktnum - ack_point;
             if (pktnum - ack_point >= MAX_ACK_NUM){
-                size_t pktlen = MAX_ACK_NUM * sizeof(uint64_t);
+                pktlen = MAX_ACK_NUM * sizeof(uint64_t);
                 auto pn = pkt_num_spaces.at(1).updatepktnum();
                 Header* hdr = new Header(ty, pn, 0, 0, pktlen);
                 out.resize(pktlen + HEADER_LENGTH);
@@ -1368,7 +1378,7 @@ public:
                 return pktlen;
             }else{
                 auto pn = pkt_num_spaces.at(1).updatepktnum();
-                size_t pktlen = (pktnum - ack_point) * sizeof(uint64_t);
+                pktlen = (pktnum - ack_point) * sizeof(uint64_t);
                 Header* hdr = new Header(ty, pn, 0, 0, pktlen);
                 out.resize(pktlen + HEADER_LENGTH);
                 // hdr->to_bytes(out);
@@ -1402,10 +1412,10 @@ public:
             if (pn == -1){
                 return 0;
             }
-            uint64_t pktnum = pkt_num_spaces.at(1).updatepktnum();
-            auto ty = Type::ElicitAck;
+            uint64_t packetnum = pkt_num_spaces.at(1).updatepktnum();
+            // auto ty = Type::ElicitAck;
             pktlen = retransmission_ack.at((uint64_t)pn).first.size();
-            Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
+            Header* hdr = new Header(ty, packetnum, 0, 0, pktlen);
             pktlen += HEADER_LENGTH;
             out.resize(pktlen + HEADER_LENGTH);
             // hdr->to_bytes(out);
@@ -1416,15 +1426,15 @@ public:
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             //// date: 1/28/2024
             auto initial_pn = valueToKeys[(uint64_t)pn];
-            keyToValues[initial_pn].push_back(pktnum);
-            valueToKeys[pktnum] = initial_pn;
+            keyToValues[initial_pn].push_back(packetnum);
+            valueToKeys[packetnum] = initial_pn;
             auto it = retransmission_ack.find((uint64_t)pn);
             if (it != retransmission_ack.end()) {
                 timeout_ack.insert(*it);
                 retransmission_ack.erase(it);
             }
             ////
-            retransmission_ack[pktnum] = std::make_pair(wait_ack, now);
+            retransmission_ack[packetnum] = std::make_pair(wait_ack, now);
 
             delete hdr; 
             hdr = nullptr; 
@@ -1581,38 +1591,38 @@ public:
     }
 
     //Writing data to send buffer.
-    size_t write() {
-        if (send_buffer.data.empty()){
-            auto toffset = total_offset % 1024;
-            size_t off_len = 0;
-            if (toffset % 1024 != 0){
-                off_len = (size_t)(1024 - (total_offset % 1024));
-            }
-            auto high_ratio = (double)high_priority  / (double)sent_number;
-            high_priority = 0;
-            sent_number = 0;
-            // Note: written_data refers to the non-retransmitted data.
+    // size_t write() {
+    //     if (send_buffer.data.empty()){
+    //         auto toffset = total_offset % 1024;
+    //         size_t off_len = 0;
+    //         if (toffset % 1024 != 0){
+    //             off_len = (size_t)(1024 - (total_offset % 1024));
+    //         }
+    //         auto high_ratio = (double)high_priority  / (double)sent_number;
+    //         high_priority = 0;
+    //         sent_number = 0;
+    //         // Note: written_data refers to the non-retransmitted data.
 
-            size_t congestion_window = 0;
-            if (high_ratio > CONGESTION_THREAHOLD){
-                congestion_window = recovery.rollback();
-            }else{
-                congestion_window = recovery.cwnd();
-            };
-            record_win = congestion_window;
-            // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
-            // return result;
-            return 0;
-        }else{
-            auto congestion_window = record_win;
-            size_t off_len = 0;
+    //         size_t congestion_window = 0;
+    //         if (high_ratio > CONGESTION_THREAHOLD){
+    //             congestion_window = recovery.rollback();
+    //         }else{
+    //             congestion_window = recovery.cwnd();
+    //         };
+    //         record_win = congestion_window;
+    //         // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
+    //         // return result;
+    //         return 0;
+    //     }else{
+    //         auto congestion_window = record_win;
+    //         size_t off_len = 0;
 
-            // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
-            // return result;
-            return 0;
-        }
+    //         // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
+    //         // return result;
+    //         return 0;
+    //     }
 
-    };
+    // };
 
     uint8_t priority_calculation(uint64_t off){
         auto real_index = (uint64_t)(off/1350);

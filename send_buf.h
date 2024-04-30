@@ -4,6 +4,7 @@
 #include "RangeBuf.h"
 #include <algorithm>
 #include <unordered_set>
+#include <stdlib.h>
 
 namespace dmludp{
 const size_t SEND_BUFFER_SIZE = 1350;
@@ -113,6 +114,15 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 length_ += x.second.second;
             }
 
+            int length_accumulate = std::accumulate(data.begin(), data.end(), 0,
+                [](int acc, const auto& x) {
+                    return acc + x.second.second;
+                });
+            
+            if(length_ != length_accumulate){
+                std::cout<<"length_ != length_accumulate"<<std::endl;
+                _Exit(0);
+            }
             return length_;
         };
 
@@ -209,12 +219,12 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             }
 
             // All data has been written into buffer, all buffer data has been sent
-            if (write_data_len <= 0 && data.empty()){
+            if (write_data_len == 0 && data.empty()){
                 return -1;
             }
             
             // no new data, but still have some unack data.
-            if (write_data_len <= 0 && !data.empty()){
+            if (write_data_len == 0 && !data.empty()){
                 return 0;
             }
 

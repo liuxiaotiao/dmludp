@@ -44,7 +44,7 @@ namespace dmludp{
             }
             else{
                 size_t startPos = out_off;
-                size_t endPos = out_off + out_len;
+                // size_t endPos = out_off + out_len;
                 memcpy(data.data() + startPos, out, out_len * sizeof(uint8_t));
             }
             len += out_len;

@@ -216,7 +216,7 @@ inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
 // }
 
 inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-    if (out_len <= 0){
+    if (out_len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
@@ -245,7 +245,7 @@ inline size_t dmludp_conn_data_sent_once(std::shared_ptr<Connection> conn){
 
 // inline ssize_t dmludp_conn_send(Connection* conn, uint8_t* out, size_t out_len) {
 inline ssize_t dmludp_conn_send(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len) {
-    if(out_len <= 0){
+    if(out_len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
@@ -263,7 +263,7 @@ inline ssize_t dmludp_conn_send(std::shared_ptr<Connection> conn, uint8_t* out, 
 
 // inline ssize_t dmludp_conn_recv(Connection* conn, const uint8_t* buf, size_t out_len){
 inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, uint8_t* buf, size_t out_len){
-    if(out_len <= 0){
+    if(out_len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
     
@@ -306,7 +306,7 @@ inline size_t dmludp_conn_recv_len(std::shared_ptr<Connection> conn){
 
 // inline ssize_t dmludp_data_read(Connection* conn, uint8_t* buf, size_t len){
 inline ssize_t dmludp_data_read(std::shared_ptr<Connection> conn, void* buf, size_t len, bool iscopy = false){
-    if(len <= 0){
+    if(len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
