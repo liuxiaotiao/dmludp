@@ -104,16 +104,16 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         // Length of stored data.
         size_t len(){
-            size_t length = 0;
+            size_t length_ = 0;
             if (data.empty()){
                 return 0;
             }
 
             for (auto x : data) {
-                length += x.second.second;
+                length_ += x.second.second;
             }
 
-            return length;
+            return length_;
         };
 
         /// Updates the max_data limit to the given value.

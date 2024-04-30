@@ -12,7 +12,7 @@ namespace dmludp{
         // std::map<uint64_t, std::shared_ptr<RangeBuf>> data;
         std::vector<uint8_t> data;
 
-        void * src;
+        void * src = nullptr;;
 
         // Used to judge the new coming data stored at data or src;
         bool convert_flag;

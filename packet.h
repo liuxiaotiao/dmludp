@@ -83,25 +83,25 @@ namespace dmludp{
             auto first = get_u8(b, off);
             off += sizeof(uint8_t);
 
-            Type ty;
+            Type ty_;
             if (first == 0x01) {
-                ty = Type::Retry;
+                ty_ = Type::Retry;
             }else if (first == 0x02){
-                ty = Type::Handshake;
+                ty_ = Type::Handshake;
             }else if (first == 0x03){
-                ty = Type::Application;
+                ty_ = Type::Application;
             }else if (first == 0x04){
-                ty = Type::ElicitAck;
+                ty_ = Type::ElicitAck;
             }else if (first == 0x05){
-                ty = Type::ACK;
+                ty_ = Type::ACK;
             }else if (first == 0x06){
-                ty = Type::Stop;
+                ty_ = Type::Stop;
             }else if (first == 0x07){
-                ty = Type::Fin;
+                ty_ = Type::Fin;
             }else if (first = 0x08){
-                ty = Type::StartAck;
+                ty_ = Type::StartAck;
             }else{
-                ty = Type::Unknown;
+                ty_ = Type::Unknown;
             }
 
             uint64_t second = get_u64(b, off);

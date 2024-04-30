@@ -90,7 +90,7 @@ int main() {
             int type = 0;
             int pktnum = 0;
             auto header = dmludp_header_info(buffer, 26, type, pktnum);
-	    std::cout<<(int)header<<std::endl;
+	        std::cout<<(int)header<<std::endl;
             if(header != 2){
                 continue;
             }
@@ -162,16 +162,16 @@ int main() {
                                 auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
-                                    uint8_t out[1500];
+                                    // uint8_t out[1500];
                                     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                                     ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
-				    if(dmludp_conn_receive_complete(dmludp_connection)){
-					    return 0;
-				    }
+                                    if(dmludp_conn_receive_complete(dmludp_connection)){
+                                        return 0;
+                                    }
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.
-                                    uint8_t out[1500];
+                                    // uint8_t out[1500];
                                     auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
                                     ssize_t socket_write = ::send(client_fd, out, stopsize, 0);
                                     auto ispadding = true;

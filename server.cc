@@ -252,8 +252,8 @@ int main() {
 
                     std::vector<uint8_t> padding(1446, 0);
                     std::vector<struct mmsghdr> messages;
-                    std::vector<struct iovec> iovecs;
-                    auto wlen= dmludp_data_send_mmsg(dmludp_connection, padding, messages, iovecs);
+                    std::vector<struct iovec> iovecs_;
+                    auto wlen= dmludp_data_send_mmsg(dmludp_connection, padding, messages, iovecs_);
                     if (messages.size() == 0){
                         continue;
                     }

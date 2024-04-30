@@ -52,10 +52,6 @@ using Offset_len = uint64_t;
 
 using Packet_len = uint64_t;
 
-extern uint8_t handshake_header[HEADER_LENGTH] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-extern uint8_t fin_header [HEADER_LENGTH] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
 struct SendInfo {
     /// The local address the packet should be sent from.
     sockaddr_storage from;
@@ -436,7 +432,7 @@ public:
         uint64_t pkt_len;
         auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_len);
        
-        size_t read = 0;
+        size_t read_ = 0;
 
         if (pkt_ty == Type::Handshake && is_server){
             update_rtt();
@@ -489,7 +485,7 @@ public:
             recv_count += 1;
             
             // optimize to reduce copy time.
-            rec_buffer.write(src, src_len, pkt_offset);
+            rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
             receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
             // Debug
             recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
@@ -505,7 +501,7 @@ public:
         //     return Err(Error::Done);
         // }
 
-        return read;
+        return read_;
     };
 
     bool send_ack(){
@@ -581,7 +577,7 @@ public:
         size_t start = 0;
         float weights = 0;        
         
-        bool non_sent = true;
+        // bool non_sent = true;
         for (auto check_pn = start_pn ; check_pn <= end_pn ; check_pn++){   
             // if (check_pn == start_pn){
             //     std::cout<<"[Debug] ACK first packet num:"<<check_pn<<std::endl;
@@ -593,7 +589,7 @@ public:
                 if (sent_dic.at(unack) == 0){
                     send_buffer.ack_and_drop(unack);
 		            // std::cout<<" remove condition 1"<<std::endl;
-                    non_sent = true;
+                    // non_sent = true;
                 }
             }else{
                 continue;
@@ -612,7 +608,7 @@ public:
                 weights += 0.25;
             }else{
                 send_buffer.ack_and_drop(unack);
-                non_sent = true;
+                // non_sent = true;
 		        // std::cout<<" remove condition 2"<<std::endl;
             }
             auto real_priority = priority_calculation(unack);
@@ -799,12 +795,13 @@ public:
         std::vector<struct iovec> &iovecs)
     {
         auto sbuf = data_buffer.at(current_buffer_pos);
-        size_t congestion_window = 0;
+        
         ssize_t written_len = 0;
         if(!retransmission_ack.empty()){
             return -1;
         }
         if (get_dmludp_error() != 11){
+            size_t congestion_window = 0;
             auto high_ratio = 0.0;
             if (high_priority == 0 && sent_number){
                 high_ratio = 0;
@@ -976,12 +973,12 @@ public:
         std::vector<struct iovec> &iovecs)
     {
         auto sbuf = data_buffer.at(current_buffer_pos);
-        size_t congestion_window = 0;
         ssize_t written_len = 0;
         if(!retransmission_ack.empty()){
             return -1;
         }
         if (get_dmludp_error() != 11){
+            size_t congestion_window = 0;
             auto high_ratio = 0.0;
             if (high_priority == 0 && sent_number){
                 high_ratio = 0;
@@ -1265,7 +1262,7 @@ public:
             std::vector<uint8_t> out_buffer;
             uint64_t pktnum = pkt_num_spaces.at(1).updatepktnum();
             // std::cout<<"[Elicit] Elicit acknowledge packet(time out) num:"<<pktnum<<std::endl;
-            auto ty = Type::ElicitAck;
+            // auto ty = Type::ElicitAck;
             pktlen = retransmission_ack.at(n).first.size();
             Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
             pktlen += HEADER_LENGTH;
@@ -1486,7 +1483,7 @@ public:
         }      
 
         if (ty == Type::Fin){
-            out = fin_header;
+            memcpy(out, fin_header, HEADER_LENGTH);
             return total_len;
         }
 

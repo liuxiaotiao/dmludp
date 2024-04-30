@@ -27,7 +27,7 @@ class RecoveryConfig {
     public:
     size_t max_send_udp_payload_size;
 
-    RecoveryConfig(){
+    RecoveryConfig():max_send_udp_payload_size(PACKET_SIZE){
 
     };
 

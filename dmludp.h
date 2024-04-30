@@ -180,7 +180,7 @@ inline long dmludp_is_empty(std::shared_ptr<Connection> conn){
 
 // inline ssize_t dmludp_send_data_stop(Connection* conn, uint8_t* out, size_t out_len){
 inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-    if (out_len <= 0){
+    if (out_len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
 
@@ -250,6 +250,9 @@ inline ssize_t dmludp_conn_send(std::shared_ptr<Connection> conn, uint8_t* out, 
     }
 
     size_t written = conn->send_data(out);
+    if (written > 0){
+        return static_cast<ssize_t>(written);
+    }
 
     if (conn->is_stopped()) {
         return dmludp_error::DMLUDP_ERR_DONE;
