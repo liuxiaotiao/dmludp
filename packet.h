@@ -78,7 +78,7 @@ namespace dmludp{
         ~Header() {};
 
 
-        static std::shared_ptr<Header> from_slice(cosnt std::vector<uint8_t>& b){
+        static std::shared_ptr<Header> from_slice(const std::vector<uint8_t>& b){
             int off = 0;
             auto first = get_u8(b, off);
             off += sizeof(uint8_t);

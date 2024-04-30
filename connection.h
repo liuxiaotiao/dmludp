@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <sys/uio.h>
 #include <stdlib.h>
-
+#include <numeric>
 #include "packet.h"
 #include "Recovery.h"
 #include "recv_buf.h"
@@ -651,34 +651,34 @@ public:
         rec_buffer.reset();
     }
 
-    bool send_all(){
-        stop_flag = false;
-        stop_ack = false;
-        waiting_flag = false;
+    // bool send_all(){
+    //     stop_flag = false;
+    //     stop_ack = false;
+    //     waiting_flag = false;
         
-        // need to change!!!!!!!!!
-        set_handshake();
+    //     // need to change!!!!!!!!!
+    //     set_handshake();
 
-        if (send_data_buf.size() > 0){
-            auto written = write();
-            send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
-            written_data += written;
-            total_offset += (uint64_t)written;
-            return true;
-        }else {
-            if (send_buffer.data.empty()){
-                return false;
-            }else{
-                // continue send
-                auto written = write();
-                send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
-                written_data += written;
-                total_offset += (uint64_t)written;
-                return true;
-            }
-        }
+    //     if (send_data_buf.size() > 0){
+    //         auto written = write();
+    //         send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
+    //         written_data += written;
+    //         total_offset += (uint64_t)written;
+    //         return true;
+    //     }else {
+    //         if (send_buffer.data.empty()){
+    //             return false;
+    //         }else{
+    //             // continue send
+    //             auto written = write();
+    //             send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
+    //             written_data += written;
+    //             total_offset += (uint64_t)written;
+    //             return true;
+    //         }
+    //     }
         
-    };
+    // };
     //  no loss scenario, no stop packet.
     bool receive_complete(){
         auto rlen = rec_buffer.receive_length();

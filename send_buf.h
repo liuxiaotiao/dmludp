@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include <stdlib.h>
+#include <numeric>
 
 namespace dmludp{
 const size_t SEND_BUFFER_SIZE = 1350;
