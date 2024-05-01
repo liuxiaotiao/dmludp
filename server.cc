@@ -158,6 +158,23 @@ int main() {
         msgs[i].msg_hdr.msg_name = NULL;
         msgs[i].msg_hdr.msg_namelen = 0;
     }
+
+    std::vector<std::shared_ptr<Header>> hdrs;
+    std::vector<struct mmsghdr> messages;
+    std::vector<struct iovec> iovecs_;
+    std::vector<std::vector<uint8_t>> out_ack;
+
+    hdrs.reserve(500);
+    messages.reserve(1000);
+    iovecs_.reserve(1000);
+    out_ack.reserve(10);
+
+    for (int i = 0; i < 10; ++i) {
+        std::vector<uint8_t> inner_vector;
+        inner_vector.reserve(44);  // 预分配内部向量
+        out_ack.push_back(inner_vector);
+    }
+    
     auto start = std::chrono::high_resolution_clock::now();
 
     size_t send_time = 1;
@@ -263,19 +280,25 @@ int main() {
                         }
                     }
 
-                    std::vector<uint8_t> padding(1446, 0);
-                    std::vector<struct mmsghdr> messages;
-                    std::vector<struct iovec> iovecs_;
-                    auto wlen= dmludp_data_send_mmsg(dmludp_connection, padding, messages, iovecs_);
-                    if (messages.size() == 0){
-                        continue;
-                    }
-
+                    // std::vector<uint8_t> padding(1446, 0);
                     size_t sent = 0;
                     auto has_error = dmludp_get_dmludp_error(dmludp_connection);
+                    ssize_t wlen = 0;
+                    size_t need_to_send = 0;
+                    size_t before_error_sent = 0;
+                    if (has_error == 0){
+                        wlen= dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_, out_ack);
+                        if (messages.size() == 0){
+                            continue;
+                        }
+                        need_to_send = messages.size();
+                    }else{
+                        need_to_send = messages.size() - dmludp_get_dmludp_error(dmludp_connection);
+                        before_error_sent = dmludp_get_dmludp_error(dmludp_connection);
+                    }   
 
-                    while(messages.size() > sent){
-                        auto retval = sendmmsg(server_fd, messages.data() + sent, messages.size() - sent, 0);
+                    while(need_to_send > sent){
+                        auto retval = sendmmsg(server_fd, messages.data() + sent + before_error_sent, messages.size() - sent - before_error_sent, 0);
 
                         if (retval == -1){
                         // Date: solve data cannot send out one time.
@@ -296,22 +319,27 @@ int main() {
                     if (messages.size() != sent){
                         continue;
                     }
-
+                    
 
                     if (has_error == 11 && (sent == messages.size())){
                         dmludp_set_error(dmludp_connection, 0, 0);
                     }
 
-                    while (true){
-                        std::vector<uint8_t> out;
-                        ssize_t ack_len = dmludp_send_elicit_ack_message(dmludp_connection, out);
-                        if (ack_len == -1){
-                            break;
-                        }
-                        if (ack_len > 0){
-                            auto socketwrite = ::send(server_fd, out.data(), out.size(), 0);
-                        }
-                    }
+                    hdrs.clear();
+                    messages.clear();
+                    iovecs_.clear();
+                    out_ack.clear();
+
+                    // while (true){
+                    //     std::vector<uint8_t> out;
+                    //     ssize_t ack_len = dmludp_send_elicit_ack_message(dmludp_connection, out);
+                    //     if (ack_len == -1){
+                    //         break;
+                    //     }
+                    //     if (ack_len > 0){
+                    //         auto socketwrite = ::send(server_fd, out.data(), out.size(), 0);
+                    //     }
+                    // }
                 }
             }
         }

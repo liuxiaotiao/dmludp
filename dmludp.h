@@ -110,10 +110,15 @@ inline bool dmludp_get_data(std::shared_ptr<Connection> conn, struct iovec *iove
     return conn->get_data(iovecs, iovecs_len);
 }
 
+inline size_t dmludp_get_error_sent(std::shared_ptr<Connection> conn){
+    return conn->get_error_sent();
+}
+
 inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn, 
-    std::vector<uint8_t> &padding, 
+    std::vector<std::shared_ptr<Header>> &hdrs, 
     std::vector<struct mmsghdr> &messages, 
-    std::vector<struct iovec> &iovecs){
+    std::vector<struct iovec> &iovecs,
+    std::vector<std::vector<uint8_t>> &out_ack){
     return conn->send_mmsg(padding, messages, iovecs);
 }
 

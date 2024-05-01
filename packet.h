@@ -8,11 +8,6 @@
 #include <functional>
 #include <unordered_map>
 #include <memory>
-// #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-//     #define IS_BIG_ENDIAN 1
-// #else
-//     #define IS_BIG_ENDIAN 0
-// #endif
 
 namespace dmludp{
     enum Type : uint8_t {
@@ -53,15 +48,10 @@ namespace dmludp{
         uint64_t pkt_num;
 
         uint8_t priority;
-        ///This offset is different from TCP offset. It refers to the last position in the 
+
         uint64_t offset;
 
         uint64_t pkt_length;
-
-        // uint16_t offset;
-
-        // uint16_t pkt_length;
-
 
         Header(
             Type first, 
@@ -77,74 +67,6 @@ namespace dmludp{
 
         ~Header() {};
 
-
-        // static std::shared_ptr<Header> from_slice(const std::vector<uint8_t>& b){
-        //     int off = 0;
-        //     auto first = get_u8(b, off);
-        //     off += sizeof(uint8_t);
-
-        //     Type ty_;
-        //     if (first == 0x01) {
-        //         ty_ = Type::Retry;
-        //     }else if (first == 0x02){
-        //         ty_ = Type::Handshake;
-        //     }else if (first == 0x03){
-        //         ty_ = Type::Application;
-        //     }else if (first == 0x04){
-        //         ty_ = Type::ElicitAck;
-        //     }else if (first == 0x05){
-        //         ty_ = Type::ACK;
-        //     }else if (first == 0x06){
-        //         ty_ = Type::Stop;
-        //     }else if (first == 0x07){
-        //         ty_ = Type::Fin;
-        //     }else if (first == 0x08){
-        //         ty_ = Type::StartAck;
-        //     }else{
-        //         ty_ = Type::Unknown;
-        //     }
-
-        //     uint64_t second = get_u64(b, off);
-        //     off += sizeof(uint64_t);
-        //     uint8_t third = get_u8(b, off);
-        //     off += sizeof(uint8_t);
-        //     uint64_t forth = get_u64(b, off);
-        //     off += sizeof(uint64_t);
-        //     uint64_t fifth = get_u64(b, off);
-
-        //     return std::make_shared<Header>(ty_, second, third, forth, fifth);
-        // };
-
-        // static std::shared_ptr<Header> from_bytes(std::vector<uint8_t> &b){
-        //     int off = 0;
-        //     auto first = get_u8(b, off);
-        //     Type ty_;
-        //     if (first == 0x01) {
-        //         ty_ = Type::Retry;
-        //     }else if (first == 0x02){
-        //         ty_ = Type::Handshake;
-        //     }else if (first == 0x03){
-        //         ty_ = Type::Application;
-        //     }else if (first == 0x04){
-        //         ty_ = Type::ElicitAck;
-        //     }else if (first == 0x05){
-        //         ty_ = Type::ACK;
-        //     }else if (first == 0x06){
-        //         ty_ = Type::Stop;
-        //     }else if (first == 0x07){
-        //         ty_ = Type::Fin;
-        //     }else if (first == 0x08){
-        //         ty_ = Type::StartAck;
-        //     }else{
-        //         ty_ = Type::Unknown;
-        //     }
-        //     uint64_t second = *reinterpret_cast<const uint64_t*>(b.data() + 1);
-        //     uint8_t third = b[9];
-        //     uint64_t forth = *reinterpret_cast<const uint64_t*>(b.data() + 10);
-        //     uint64_t fifth = *reinterpret_cast<const uint64_t*>(b.data() + 18);
-
-        //     return std::make_shared<Header>(ty_, second, third, forth, fifth);
-        // };
 
         void to_bytes(std::vector<uint8_t> &out){
             uint8_t first = 0;
@@ -181,44 +103,6 @@ namespace dmludp{
             put_u64(out, pkt_length, off);
 
         };
-
-
-        // static uint64_t get_u64(std::vector<uint8_t> vec, int start){
-        //     uint64_t value = 0;
-        //     std::vector data_slice(vec.begin() + start, vec.begin() + start + sizeof(uint64_t));
-        //     #if IS_BIG_ENDIAN
-        //         for (int i = 0; i < 8; ++i) {
-        //             value |= static_cast<uint64_t>(data_slice[i]) << ((7 - i) * 8);
-        //         }
-        //     #else
-        //         for (int i = 0; i < 8; ++i) {
-        //             value |= static_cast<uint64_t>(data_slice[i]) << (i * 8);
-        //         }
-        //     #endif
-        //     return value;
-        // };
-
-        // static uint8_t get_u8(std::vector<uint8_t> vec, int position){
-        //     return vec[position];
-        // };
-
-        // void put_u64(std::vector<uint8_t> &vec, uint64_t input, int position){
-        //     std::vector<uint8_t> data_slice(sizeof(uint64_t));
-        //     #if IS_BIG_ENDIAN
-        //         for (int i = 0; i < sizeof(uint64_t); ++i) {
-        //             data_slice[i] = static_cast<uint8_t>(input >> ((7 - i) * 8));
-        //         }
-        //     #else 
-        //         for (int i = 0; i < sizeof(uint64_t); ++i) {
-        //             data_slice[i] = static_cast<uint8_t>(input >> (i * 8));
-        //         }
-        //     #endif
-        //     std::copy(data_slice.begin(), data_slice.end(), vec.begin() + position);
-        // };
-
-        // void put_u8(std::vector<uint8_t> &vec, uint8_t input, int position){
-        //     vec.at(position)= input;
-        // };
 
         void put_u64(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
             memcpy(vec.data() + position, input, ssize_t(uint64_t));

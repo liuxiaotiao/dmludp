@@ -15,13 +15,7 @@
 #include "Recovery.h"
 #include "recv_buf.h"
 #include "send_buf.h"
-
-
-// #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-//     #define IS_BIG_ENDIAN 1
-// #else
-//     #define IS_BIG_ENDIAN 0
-// #endif
+#include <cmath>
 
 namespace dmludp {
 
@@ -41,6 +35,10 @@ const size_t MIN_CLIENT_INITIAL_LEN = 1350;
 
 // The default max_datagram_size used in congestion control.
 const size_t MAX_SEND_UDP_PAYLOAD_SIZE = 1350;
+
+const double alpha = 0.875;
+
+const double beta = 0.25;
 
 using Type_len = uint8_t;
 
@@ -220,9 +218,6 @@ public:
 
     // Record sent application packet num
     std::vector<uint64_t> record2ack_pktnum;
-    
-    // // Record sent application packet num
-    // std::vector<uint64_t> record_send_pktnum;
 
     // Key: sent packet number, value: correspoind offset
     std::map<uint64_t, uint64_t> pktnum2offset;
@@ -273,6 +268,12 @@ public:
     std::array<PktNumSpace, 2> pkt_num_spaces;
 
     std::chrono::nanoseconds rtt;
+
+    std::chrono::nanoseconds srtt;
+
+    std::chrono::nanoseconds rto;
+
+    std::chrono::nanoseconds rttvar;
     
     std::chrono::high_resolution_clock::time_point handshake;
 
@@ -365,6 +366,9 @@ public:
     high_priority(0),
     sent_number(0),
     rtt(0),
+    srtt(0),
+    rto(0),
+    rttvar(0),
     handshake(std::chrono::high_resolution_clock::now()),
     bidirect(true),
     initial(false),
@@ -385,34 +389,23 @@ public:
 
     void update_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
-        if (rtt.count() == 0 ){
-            rtt = arrive_time - handshake;
-        }else{
-            rtt = 17 * (arrive_time - handshake) / 16;
-        }
+        rtt = arrive_time - handshake;
+        srtt = srtt * alpha + (1 - alpha) * rtt;
+        rttvar = (1 - beta) * rttvar + beta * (std::chrono::nanoseconds(std::abs(srtt - rtt)));
+        rto = srtt + 4 * rttvar;
     };
 
     void set_rtt(uint64_t inter){
         if (bidirect){
             rtt = std::chrono::nanoseconds(inter);
         }
+        if (srtt.count() == 0){
+            srtt = rtt;
+        }
+        if (rttvar.cout() == 0){
+            rttvar = rtt;
+        }
     };
-
-    void new_rtt(uint64_t last){
-        rtt = rtt / 4 + 3 * std::chrono::nanoseconds(last) / 4;
-    };
-
-    // uint64_t convertToUint64(const std::vector<uint8_t>& v){
-    //     uint64_t result = 0;
-    //     for (int i = 0; i < 8; ++i) {
-    //     #if  IS_BIG_ENDIAN
-    //         result |= static_cast<uint64_t>(v[i]) << (56 - i * 8);
-    //     #else
-    //         result |= static_cast<uint64_t>(v[i]) << i * 8;
-    //     #endif
-    //     }
-    //     return result;
-    // };
 
     Type header_info(uint8_t* src, size_t src_len, uint64_t &pkt_num, uint8_t &pkt_priorty, uint64_t &pkt_offset, uint64_t &pkt_len){
         auto pkt_ty = reinterpret_cast<Header *>(src)->ty;
@@ -748,16 +741,20 @@ public:
         written_data_once = 0;
     }
 
-    ssize_t send_mmsg(std::vector<uint8_t> &padding, 
+    ssize_t send_mmsg(
+        std::vector<std::shared_ptr<Header>> &hdrs,
         std::vector<struct mmsghdr> &messages, 
-        std::vector<struct iovec> &iovecs)
+        std::vector<struct iovec> &iovecs,
+        std::vector<std::vector<uint8_t>> &out_ack)
     {
         auto sbuf = data_buffer.at(current_buffer_pos);
         
         ssize_t written_len = 0;
+
         if(!retransmission_ack.empty()){
             return -1;
         }
+
         if (get_dmludp_error() != 11){
             size_t congestion_window = 0;
             auto high_ratio = 0.0;
@@ -774,7 +771,6 @@ public:
                 congestion_window = recovery.cwnd();
             };
             record_win = congestion_window;
-
             
             for (auto i = current_buffer_pos ; i < data_buffer.size() ;){
                 auto wlen = nwrite(data_buffer.at(current_buffer_pos), congestion_window);
@@ -795,66 +791,50 @@ public:
                     break;
                 }
             }
-        }else{
-            send_buffer.sent = 0;
-            // consider using same packet number for not sent packet
-            record2ack_pktnum.erase(record2ack_pktnum.begin() + dmludp_error_sent, record2ack_pktnum.end());
         }
-
-
+        else{
+            send_buffer.sent = 0;
+        }
+        
         // consider add ack message at the end of the flow.
-        iovecs.resize(send_buffer.data.size() * 2);
+        iovecs.resize((send_buffer.data.size()) * 2);
         messages.resize(send_buffer.data.size());
 
-        // unlock memory allocation, and consider move this to function parameter.
-        std::vector<std::shared_ptr<Header>> hdrs;
         for (auto i = 0; ; ++i){
             size_t out_len = 0; 
             uint64_t out_off = 0;
             bool s_flag = false;
             auto pn = 0;
-	        auto priority = 0;
-	        if (get_dmludp_error() == 0){
+            auto priority = 0;
+            if (get_dmludp_error() == 0){
                 pn = pkt_num_spaces.at(0).updatepktnum();
-                // if (i == 0){
-                //     std::cout<<std::endl;
-                //     std::cout<<"[pktnum] "<<pn<<std::endl;
-                // }  
+
                 s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
                 out_off -= (uint64_t)out_len;
                 sent_count += 1;
                 sent_number += 1;
-                   
+                
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
                 if (i == 0){
                     first_application_pktnum = pn;
                 }
-                // counter?
-                // print address?
+        
                 std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
                 hdrs.push_back(hdr);
                 iovecs[2*i].iov_base = (void *)hdr.get();
                 iovecs[2*i].iov_len = HEADER_LENGTH;
-		    }else{
+            }else{
                 if (i < dmludp_error_sent){
-                    // if (i == 0){
-                    //     std::cout<<std::endl;
-                    //     std::cout<<"[11 pktnum] start pn:"<<first_application_pktnum<<std::endl;
-                    // }
-			        send_buffer.emit(iovecs[0], out_len, out_off);
+                    send_buffer.emit(iovecs[0], out_len, out_off);
                     continue;
                 }
-                // if(i == dmludp_error_sent){
-                //     std::cout<<"[11 pktnum] refill"<<std::endl;
-                // }
-                
+
                 s_flag = send_buffer.emit(iovecs[(i-dmludp_error_sent)*2+1], out_len, out_off);
                 out_off -= (uint64_t)out_len;
 
                 pn = first_application_pktnum + i;
-                // std::cout<<"[11 pktnum] "<<pn<<std::endl;
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
@@ -872,42 +852,18 @@ public:
                 sent_dic[out_off] = priority;
             }
 
-            // if ((i == 0) && (get_dmludp_error() == 0)){
-            //     std::cout<<"[Send] start application packet, offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-            // }
-
-            // if ((i == dmludp_error_sent) && (get_dmludp_error() != 0)){
-            //     std::cout<<"[Send] start application packet(EAGAIN), offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-            // }
-            
-            
-            // if (out_len != MAX_SEND_UDP_PAYLOAD_SIZE){
-            //     std::cout<<"[Send] offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-            // }
-
             if (get_dmludp_error() == 0){
-                record_send.push_back(offset);
-                record2ack.push_back(offset);
-                // record_send_pktnum.push_back(pn);
                 record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
                 messages[i].msg_hdr.msg_iov = &iovecs[2*i];
                 messages[i].msg_hdr.msg_iovlen = 2;
             }else{
-                messages[i-dmludp_error_sent].msg_hdr.msg_iov = &iovecs[2*(i-dmludp_error_sent)];
-                messages[i-dmludp_error_sent].msg_hdr.msg_iovlen = 2;
-                record2ack_pktnum.push_back(pn);
-                pktnum2offset[pn] = out_off;
+                messages[i - dmludp_error_sent].msg_hdr.msg_iov = &iovecs[2*(i-dmludp_error_sent)];
+                messages[i - dmludp_error_sent].msg_hdr.msg_iovlen = 2;
             }
 
 
-            if (s_flag){
-                // if (get_dmludp_error() == 0){
-                //     std::cout<<"[Send] End application packet, offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-                // }else{
-                //     std::cout<<"[Send] End application packet(EAGAIN), offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-                // }
-                
+            if (s_flag){     
                 stop_flag = true;
                 if ((i+1) < send_buffer.data.size()){
                     if (get_dmludp_error() == 0){
@@ -924,20 +880,279 @@ public:
                         messages.resize(i + 1 - dmludp_error_sent);
                     }
                 }
-                // std::cout<<"[Debug] i ="<<i<<std::endl;
                 break;
             }
 
         }
+        auto acknowledege_result = send_elicit_ack_message_pktnum_merge(hdrs, messages, iovecs, out_ack);
+
         if (written_len){
             stop_ack = false;
         }
-
 
         written_data_len += written_len;
 
   	    return written_len;
     };
+
+    size_t get_error_sent(){
+        return dmludp_error_sent;
+    }
+
+    ssize_t send_elicit_ack_message_pktnum_merge(std::vector<struct mmsghdr> &messages, std::vector<struct iovec> &iovecs, std::vector<std::vector<uint8_t>> &out_ack){
+        auto ty = Type::ElicitAck;        
+        size_t preparenum = record2ack_pktnum.size();
+
+        size_t sent_num = 0;
+        int index = 0;
+        size_t pktlen = 0;
+        if(record2ack_pktnum.empty()){
+            return -1;
+        }
+        out_ack.resize((preparenum / MAX_ACK_NUM_PKTNUM + 1));
+        auto ioves_size = iovecs.size();
+        auto message_size = messages.size();
+        iovecs.resize(ioves_size + out_ack.size());
+        messages.resize(message_size + out_ack.size());
+
+        while(sent_num != record2ack_pktnum.size()){
+            sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
+            out_ack.at[index].resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
+
+            uint64_t start_pktnum = record2ack_pktnum[0];  
+
+            uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
+
+            auto pn = pkt_num_spaces.at(1).updatepktnum();
+            Header* hdr = new Header(ty, pn, 0, 0, 0);
+
+            hdr->to_bytes(out_ack.at[index]);
+            memcpy(out_ack.at[index] + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
+            memcpy(out_ack.at[index] + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
+            if(sent_num == record2ack_pktnum.size()){
+                record2ack_pktnum.clear();
+            }else{
+                record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
+            }
+
+            delete hdr; 
+            hdr = nullptr; 
+            ack_set.insert(pn);
+            keyToValues[pn].push_back(pn);
+            valueToKeys[pn] = pn;
+            ack_point += sent_num;
+            std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
+            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+            retransmission_ack[pn] = std::make_pair(std::move(wait_ack), now);
+            send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
+
+            iovecs[ioves_size].iov_base = out_ack[index].data();
+            iovecs[ioves_size].iov_len = out_ack[index].size();
+
+            messages[message_size].msg_hdr.msg_iov = &iovecs[ioves_size];
+            messages[message_size].msg_hdr.msg_iovlen = 1;
+
+            ioves_size++;
+            message_size++;
+            index++;
+
+            pktlen += HEADER_LENGTH;
+            
+        }
+        return pktlen;
+    }
+    
+
+    // ssize_t send_mmsg(std::vector<uint8_t> &padding, 
+    //     std::vector<struct mmsghdr> &messages, 
+    //     std::vector<struct iovec> &iovecs)
+    // {
+    //     auto sbuf = data_buffer.at(current_buffer_pos);
+        
+    //     ssize_t written_len = 0;
+    //     if(!retransmission_ack.empty()){
+    //         return -1;
+    //     }
+    //     if (get_dmludp_error() != 11){
+    //         size_t congestion_window = 0;
+    //         auto high_ratio = 0.0;
+    //         if (high_priority == 0 && sent_number){
+    //             high_ratio = 0;
+    //         }else{
+    //             high_ratio = (double)high_priority  / (double)sent_number;
+    //         }
+    //         high_priority = 0;
+    //         sent_number = 0;
+    //         if (high_ratio > CONGESTION_THREAHOLD){
+    //             congestion_window = recovery.rollback();
+    //         }else{
+    //             congestion_window = recovery.cwnd();
+    //         };
+    //         record_win = congestion_window;
+
+            
+    //         for (auto i = current_buffer_pos ; i < data_buffer.size() ;){
+    //             auto wlen = nwrite(data_buffer.at(current_buffer_pos), congestion_window);
+    //             if (wlen == -2){
+    //                 written_len = 0;
+    //                 break;
+    //             }
+    //             written_len += wlen;
+    //             if (data_buffer[current_buffer_pos].left == 0 && (current_buffer_pos == data_buffer.size() - 1))
+    //                 break;
+    //             if (data_buffer.at(current_buffer_pos).sent() == data_buffer.at(current_buffer_pos).len && (current_buffer_pos < data_buffer.size())){
+    //                 current_buffer_pos += 1;
+    //             }
+    //             if (written_len >= congestion_window)
+    //                 break;
+                
+    //             if (send_buffer.cap()<=0){
+    //                 break;
+    //             }
+    //         }
+    //     }else{
+    //         send_buffer.sent = 0;
+    //         // consider using same packet number for not sent packet
+    //         record2ack_pktnum.erase(record2ack_pktnum.begin() + dmludp_error_sent, record2ack_pktnum.end());
+    //     }
+
+
+    //     // consider add ack message at the end of the flow.
+    //     iovecs.resize(send_buffer.data.size() * 2);
+    //     messages.resize(send_buffer.data.size());
+
+    //     // unlock memory allocation, and consider move this to function parameter.
+    //     std::vector<std::shared_ptr<Header>> hdrs;
+    //     for (auto i = 0; ; ++i){
+    //         size_t out_len = 0; 
+    //         uint64_t out_off = 0;
+    //         bool s_flag = false;
+    //         auto pn = 0;
+	//         auto priority = 0;
+	//         if (get_dmludp_error() == 0){
+    //             pn = pkt_num_spaces.at(0).updatepktnum();
+    //             // if (i == 0){
+    //             //     std::cout<<std::endl;
+    //             //     std::cout<<"[pktnum] "<<pn<<std::endl;
+    //             // }  
+    //             s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
+    //             out_off -= (uint64_t)out_len;
+    //             sent_count += 1;
+    //             sent_number += 1;
+                   
+    //             priority = priority_calculation(out_off);
+    //             Type ty = Type::Application;
+
+    //             if (i == 0){
+    //                 first_application_pktnum = pn;
+    //             }
+    //             // counter?
+    //             // print address?
+    //             std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
+    //             hdrs.push_back(hdr);
+    //             iovecs[2*i].iov_base = (void *)hdr.get();
+    //             iovecs[2*i].iov_len = HEADER_LENGTH;
+	// 	    }else{
+    //             if (i < dmludp_error_sent){
+    //                 // if (i == 0){
+    //                 //     std::cout<<std::endl;
+    //                 //     std::cout<<"[11 pktnum] start pn:"<<first_application_pktnum<<std::endl;
+    //                 // }
+	// 		        send_buffer.emit(iovecs[0], out_len, out_off);
+    //                 continue;
+    //             }
+    //             // if(i == dmludp_error_sent){
+    //             //     std::cout<<"[11 pktnum] refill"<<std::endl;
+    //             // }
+                
+    //             s_flag = send_buffer.emit(iovecs[(i-dmludp_error_sent)*2+1], out_len, out_off);
+    //             out_off -= (uint64_t)out_len;
+
+    //             pn = first_application_pktnum + i;
+    //             // std::cout<<"[11 pktnum] "<<pn<<std::endl;
+    //             priority = priority_calculation(out_off);
+    //             Type ty = Type::Application;
+
+    //             std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
+    //             hdrs.push_back(hdr);
+    //             iovecs[2*(i-dmludp_error_sent)].iov_base = (void *)hdr.get();
+    //             iovecs[2*(i-dmludp_error_sent)].iov_len = HEADER_LENGTH;
+    //         }
+    //         auto offset = out_off;
+    //         if (sent_dic.find(out_off) != sent_dic.end()){
+    //             if (sent_dic[out_off] != 3&& ((get_dmludp_error() != 11))){
+    //                 sent_dic[out_off] -= 1;
+    //             }
+    //         }else{
+    //             sent_dic[out_off] = priority;
+    //         }
+
+    //         // if ((i == 0) && (get_dmludp_error() == 0)){
+    //         //     std::cout<<"[Send] start application packet, offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
+    //         // }
+
+    //         // if ((i == dmludp_error_sent) && (get_dmludp_error() != 0)){
+    //         //     std::cout<<"[Send] start application packet(EAGAIN), offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
+    //         // }
+            
+            
+    //         // if (out_len != MAX_SEND_UDP_PAYLOAD_SIZE){
+    //         //     std::cout<<"[Send] offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
+    //         // }
+
+    //         if (get_dmludp_error() == 0){
+    //             record_send.push_back(offset);
+    //             record2ack.push_back(offset);
+    //             // record_send_pktnum.push_back(pn);
+    //             record2ack_pktnum.push_back(pn);
+    //             pktnum2offset[pn] = out_off;
+    //             messages[i].msg_hdr.msg_iov = &iovecs[2*i];
+    //             messages[i].msg_hdr.msg_iovlen = 2;
+    //         }else{
+    //             messages[i-dmludp_error_sent].msg_hdr.msg_iov = &iovecs[2*(i-dmludp_error_sent)];
+    //             messages[i-dmludp_error_sent].msg_hdr.msg_iovlen = 2;
+    //             record2ack_pktnum.push_back(pn);
+    //             pktnum2offset[pn] = out_off;
+    //         }
+
+
+    //         if (s_flag){
+    //             // if (get_dmludp_error() == 0){
+    //             //     std::cout<<"[Send] End application packet, offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
+    //             // }else{
+    //             //     std::cout<<"[Send] End application packet(EAGAIN), offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
+    //             // }
+                
+    //             stop_flag = true;
+    //             if ((i+1) < send_buffer.data.size()){
+    //                 if (get_dmludp_error() == 0){
+    //                     iovecs.resize((i+1) * 2);
+    //                     messages.resize(i+1);
+    //                 }else{
+    //                     iovecs.resize((i + 1 - dmludp_error_sent) * 2);
+    //                     messages.resize(i + 1 - dmludp_error_sent);
+    //                 }
+    //             }
+    //             else{
+    //                 if (get_dmludp_error() == 11){
+    //                     iovecs.resize((i + 1 - dmludp_error_sent) * 2);
+    //                     messages.resize(i + 1 - dmludp_error_sent);
+    //                 }
+    //             }
+    //             // std::cout<<"[Debug] i ="<<i<<std::endl;
+    //             break;
+    //         }
+
+    //     }
+    //     if (written_len){
+    //         stop_ack = false;
+    //     }
+
+
+    //     written_data_len += written_len;
+
+  	//     return written_len;
+    // };
 
     ssize_t send_msg(std::vector<uint8_t> &padding, 
         std::vector<struct msghdr> &messages, 
@@ -1146,7 +1361,6 @@ public:
         auto pn = pkt_num_spaces.at(1).updatepktnum();
         Header* hdr = new Header(ty, pn, 0, 0, pktlen);
         out.resize(pktlen + HEADER_LENGTH);
-        // hdr->to_bytes(out);
         memcpy(out.data(), hdr, HEADER_LENGTH);
         memcpy(out.data() + HEADER_LENGTH, record2ack.data(), record2ack.size());
         if(sent_num == record2ack.size()){
@@ -1216,8 +1430,7 @@ public:
     // Time our occurs, timerfd triger this function and send retranmssion elicit ack.
     ssize_t send_timeout_elicit_ack_message(std::vector<std::vector<uint8_t>> &out, std::set<std::chrono::high_resolution_clock::time_point> &timestamps){
         auto ty = Type::ElicitAck;
-        // size_t pktlen = 0; 
-        // ssize_t pn = -1;
+
         std::vector<uint64_t> pn_list;
         timestamps.clear();
         // Cancel timerfd.
@@ -1248,15 +1461,13 @@ public:
             Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
             pktlen += HEADER_LENGTH;
             out_buffer.resize(pktlen);
-            // hdr->to_bytes(out_buffer);
+
             memcpy(out_buffer.data(),hdr, HEADER_LENGTH);
-            // memcpy(out_buffer.begin(), hdr, HEADER_LENGTH);
-            ////
+
             std::vector<uint8_t> wait_ack(retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.end());
-            // std::copy(wait_ack.begin(), wait_ack.end(), out_buffer.begin() + HEADER_LENGTH);
 
             memcpy(out_buffer.data() + HEADER_LENGTH, retransmission_ack.at(n).first.data(), retransmission_ack.at(n).first.size());
-            ///
+
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             auto initial_pn = valueToKeys[n];
             keyToValues[initial_pn].push_back(pktnum);
@@ -1311,117 +1522,111 @@ public:
     }
 
     // Send elicit ack operation and retransmission elicit ack.
-    ssize_t send_elicit_ack(std::vector<uint8_t> &out){
-        auto ty = Type::ElicitAck;
-        auto pktnum = record_send.size();
-        if (retransmission_ack.size() == 0 && ack_point == pktnum){
-            if (stop_ack){
-                return -1;
-            }
-        }
+    // ssize_t send_elicit_ack(std::vector<uint8_t> &out){
+    //     auto ty = Type::ElicitAck;
+    //     auto pktnum = record_send.size();
+    //     if (retransmission_ack.size() == 0 && ack_point == pktnum){
+    //         if (stop_ack){
+    //             return -1;
+    //         }
+    //     }
 
-        // ack_point is used to mark how many ack sent.
-        if (ack_point != pktnum){
-            size_t pktlen = 0;
-            // size_t end_point = 0;
+    //     // ack_point is used to mark how many ack sent.
+    //     if (ack_point != pktnum){
+    //         size_t pktlen = 0;
 
-            // size_t leftnum = pktnum - ack_point;
-            if (pktnum - ack_point >= MAX_ACK_NUM){
-                pktlen = MAX_ACK_NUM * sizeof(uint64_t);
-                auto pn = pkt_num_spaces.at(1).updatepktnum();
-                Header* hdr = new Header(ty, pn, 0, 0, pktlen);
-                out.resize(pktlen + HEADER_LENGTH);
-                // hdr->to_bytes(out);
-                memcpy(out.data(), hdr, HEADER_LENGTH);
-                memcpy(out.data() + HEADER_LENGTH, record_send.data() + ack_point, out.size());
-                delete hdr; 
-                hdr = nullptr; 
-                ack_set.insert(pn);
-                //// date: 1/28/2024
-                keyToValues[pn].push_back(pn);
-                valueToKeys[pn] = pn;
-                //////
-                ack_point += 160;
-                std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                retransmission_ack[pn] = std::make_pair(wait_ack, now);
-                pktlen += HEADER_LENGTH;
-                return pktlen;
-            }else{
-                auto pn = pkt_num_spaces.at(1).updatepktnum();
-                pktlen = (pktnum - ack_point) * sizeof(uint64_t);
-                Header* hdr = new Header(ty, pn, 0, 0, pktlen);
-                out.resize(pktlen + HEADER_LENGTH);
-                // hdr->to_bytes(out);
-                memcpy(out.data(), hdr, HEADER_LENGTH);
-                memcpy(out.data() + HEADER_LENGTH, record_send.data() + ack_point, out.size());
-                delete hdr; 
-                hdr = nullptr; 
-                ack_set.insert(pn);
-                //// date: 1/28/2024
-                keyToValues[pn].push_back(pn);
-                valueToKeys[pn] = pn;
-                //////
-                ack_point = pktnum;
-                std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                retransmission_ack[pn] = std::make_pair(wait_ack, now);
-                pktlen += HEADER_LENGTH;
-                return pktlen;
-            }
-        }else{
-            size_t pktlen = 0; 
-            ssize_t pn = -1;
-            for (const auto& e : retransmission_ack){
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
-                if ((e.second.second + duration) < now ){
-                    pn = (ssize_t)e.first;
-                    break;
-                }
-            }
-            if (pn == -1){
-                return 0;
-            }
-            uint64_t packetnum = pkt_num_spaces.at(1).updatepktnum();
-            // auto ty = Type::ElicitAck;
-            pktlen = retransmission_ack.at((uint64_t)pn).first.size();
-            Header* hdr = new Header(ty, packetnum, 0, 0, pktlen);
-            pktlen += HEADER_LENGTH;
-            out.resize(pktlen + HEADER_LENGTH);
-            // hdr->to_bytes(out);
-            memcpy(out.data(), hdr, HEADER_LENGTH);
-            std::vector<uint8_t> wait_ack(retransmission_ack.at((uint64_t)pn).first.begin(), retransmission_ack.at((uint64_t)pn).first.end());
-            // std::copy(wait_ack.begin(), wait_ack.end(), out.begin() + HEADER_LENGTH);
-            memcpy(out.data() + HEADER_LENGTH, retransmission_ack.at((uint64_t)pn).first.data(), retransmission_ack.at((uint64_t)pn).first.size());
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            //// date: 1/28/2024
-            auto initial_pn = valueToKeys[(uint64_t)pn];
-            keyToValues[initial_pn].push_back(packetnum);
-            valueToKeys[packetnum] = initial_pn;
-            auto it = retransmission_ack.find((uint64_t)pn);
-            if (it != retransmission_ack.end()) {
-                timeout_ack.insert(*it);
-                retransmission_ack.erase(it);
-            }
-            ////
-            retransmission_ack[packetnum] = std::make_pair(wait_ack, now);
+    //         if (pktnum - ack_point >= MAX_ACK_NUM){
+    //             pktlen = MAX_ACK_NUM * sizeof(uint64_t);
+    //             auto pn = pkt_num_spaces.at(1).updatepktnum();
+    //             Header* hdr = new Header(ty, pn, 0, 0, pktlen);
+    //             out.resize(pktlen + HEADER_LENGTH);
 
-            delete hdr; 
-            hdr = nullptr; 
-            return pktlen;           
-        }
+    //             memcpy(out.data(), hdr, HEADER_LENGTH);
+    //             memcpy(out.data() + HEADER_LENGTH, record_send.data() + ack_point, out.size());
+    //             delete hdr; 
+    //             hdr = nullptr; 
+    //             ack_set.insert(pn);
 
-    }
+    //             keyToValues[pn].push_back(pn);
+    //             valueToKeys[pn] = pn;
+                
+    //             ack_point += 160;
+    //             std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
+    //             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    //             retransmission_ack[pn] = std::make_pair(wait_ack, now);
+    //             pktlen += HEADER_LENGTH;
+    //             return pktlen;
+    //         }else{
+    //             auto pn = pkt_num_spaces.at(1).updatepktnum();
+    //             pktlen = (pktnum - ack_point) * sizeof(uint64_t);
+    //             Header* hdr = new Header(ty, pn, 0, 0, pktlen);
+    //             out.resize(pktlen + HEADER_LENGTH);
+
+    //             memcpy(out.data(), hdr, HEADER_LENGTH);
+    //             memcpy(out.data() + HEADER_LENGTH, record_send.data() + ack_point, out.size());
+    //             delete hdr; 
+    //             hdr = nullptr; 
+    //             ack_set.insert(pn);
+
+    //             keyToValues[pn].push_back(pn);
+    //             valueToKeys[pn] = pn;
+
+    //             ack_point = pktnum;
+    //             std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
+    //             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    //             retransmission_ack[pn] = std::make_pair(wait_ack, now);
+    //             pktlen += HEADER_LENGTH;
+    //             return pktlen;
+    //         }
+    //     }else{
+    //         size_t pktlen = 0; 
+    //         ssize_t pn = -1;
+    //         for (const auto& e : retransmission_ack){
+    //             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    //             std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
+    //             if ((e.second.second + duration) < now ){
+    //                 pn = (ssize_t)e.first;
+    //                 break;
+    //             }
+    //         }
+    //         if (pn == -1){
+    //             return 0;
+    //         }
+    //         uint64_t packetnum = pkt_num_spaces.at(1).updatepktnum();
+
+    //         pktlen = retransmission_ack.at((uint64_t)pn).first.size();
+    //         Header* hdr = new Header(ty, packetnum, 0, 0, pktlen);
+    //         pktlen += HEADER_LENGTH;
+    //         out.resize(pktlen + HEADER_LENGTH);
+
+    //         memcpy(out.data(), hdr, HEADER_LENGTH);
+    //         std::vector<uint8_t> wait_ack(retransmission_ack.at((uint64_t)pn).first.begin(), retransmission_ack.at((uint64_t)pn).first.end());
+
+    //         memcpy(out.data() + HEADER_LENGTH, retransmission_ack.at((uint64_t)pn).first.data(), retransmission_ack.at((uint64_t)pn).first.size());
+    //         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+
+    //         auto initial_pn = valueToKeys[(uint64_t)pn];
+    //         keyToValues[initial_pn].push_back(packetnum);
+    //         valueToKeys[packetnum] = initial_pn;
+    //         auto it = retransmission_ack.find((uint64_t)pn);
+    //         if (it != retransmission_ack.end()) {
+    //             timeout_ack.insert(*it);
+    //             retransmission_ack.erase(it);
+    //         }
+
+    //         retransmission_ack[packetnum] = std::make_pair(wait_ack, now);
+
+    //         delete hdr; 
+    //         hdr = nullptr; 
+    //         return pktlen;           
+    //     }
+
+    // }
 
     //Send single packet
     size_t send_data(uint8_t* out){
-        // size_t done = 0;
         size_t total_len = HEADER_LENGTH;
 
-        // uint64_t pn = 0;
-        // uint64_t offset = 0;
-        // uint8_t priority = 0;
         uint64_t psize = 0;
 
         auto ty = write_pkt_type(); 
@@ -1465,9 +1670,6 @@ public:
     size_t send_data_stop(uint8_t* out){ 
         size_t total_len = HEADER_LENGTH;
 
-        // auto pn =  pkt_num_spaces[1].next_pkt_num;
-        // pkt_num_spaces[1].next_pkt_num += 1;
-
         auto pn = pkt_num_spaces.at(1).updatepktnum();
 
         uint64_t offset = 0;
@@ -1481,8 +1683,6 @@ public:
         memcpy(out, hdr, HEADER_LENGTH);
         delete hdr; 
         hdr = nullptr; 
-
-        // std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 
         return total_len;
     };
@@ -1562,8 +1762,6 @@ public:
     void check_loss_pktnum(uint8_t* src, size_t src_len){
         uint64_t start = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH);
         uint64_t end = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH + sizeof(uint64_t));
-        // memcpy(&start, b.data(), sizeof(uint64_t));
-        // memcpy(&end, b.data() + sizeof(uint64_t), sizeof(uint64_t));
         // Used to debug.
         // std::map<uint64_t, uint8_t> ack_record;
 
@@ -1585,7 +1783,7 @@ public:
     };
 
     double get_rtt() {
-        return rtt.count();
+        return rto.count();
     };
 
     size_t max_send_udp_payload_size() {
