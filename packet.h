@@ -105,7 +105,7 @@ namespace dmludp{
         };
 
         void put_u64(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
-            memcpy(vec.data() + position, input, sizeof(uint64_t));
+            memcpy(vec.data() + position, &input, sizeof(uint64_t));
         };
 
         void put_u8(std::vector<uint8_t> &vec, uint8_t input, size_t position){

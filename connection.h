@@ -393,7 +393,7 @@ public:
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.cout() * alpha + (1 - alpha) * rtt.count());
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
-        auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * (std::chrono::nanoseconds(std::abs(diff.count()))));
+        auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
         rto = srtt + 4 * rttvar;
     };
