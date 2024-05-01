@@ -390,7 +390,7 @@ public:
     void update_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;    
-        auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.cout() * alpha + (1 - alpha) * rtt.count());
+        auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
