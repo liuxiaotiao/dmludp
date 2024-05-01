@@ -926,7 +926,7 @@ public:
             auto pn = pkt_num_spaces.at(1).updatepktnum();
             Header* hdr = new Header(ty, pn, 0, 0, 0);
 
-            hdr->to_bytes(out_ack.at[index]);
+            hdr->to_bytes(out_ack[index]);
             memcpy(out_ack[index] + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
             memcpy(out_ack[index] + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
             if(sent_num == record2ack_pktnum.size()){

@@ -147,13 +147,13 @@ inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, 
     return written;
 }
 
-inline ssize_t dmludp_send_elicit_ack(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-    std::vector<uint8_t> out_vector(out_len);
-    ssize_t written = conn->send_elicit_ack(out_vector);
-    if (written > 0)
-        memcpy(out, out_vector.data(), written);
-    return written;
-}
+// inline ssize_t dmludp_send_elicit_ack(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
+//     std::vector<uint8_t> out_vector(out_len);
+//     ssize_t written = conn->send_elicit_ack(out_vector);
+//     if (written > 0)
+//         memcpy(out, out_vector.data(), written);
+//     return written;
+// }
 
 inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
     return conn->enable_adding();
