@@ -391,7 +391,7 @@ public:
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;
         srtt = srtt * alpha + (1 - alpha) * rtt;
-        rttvar = (1 - beta) * rttvar + beta * (std::chrono::nanoseconds(std::abs(srtt - rtt)));
+        rttvar = (1 - beta) * rttvar + beta * (std::chrono::nanoseconds(std::abs((srtt - rtt).count())));
         rto = srtt + 4 * rttvar;
     };
 
@@ -402,7 +402,7 @@ public:
         if (srtt.count() == 0){
             srtt = rtt;
         }
-        if (rttvar.cout() == 0){
+        if (rttvar.count() == 0){
             rttvar = rtt;
         }
     };
@@ -917,7 +917,7 @@ public:
 
         while(sent_num != record2ack_pktnum.size()){
             sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
-            out_ack.at[index].resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
+            out_ack[index].resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
             uint64_t start_pktnum = record2ack_pktnum[0];  
 
@@ -927,8 +927,8 @@ public:
             Header* hdr = new Header(ty, pn, 0, 0, 0);
 
             hdr->to_bytes(out_ack.at[index]);
-            memcpy(out_ack.at[index] + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
-            memcpy(out_ack.at[index] + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
+            memcpy(out_ack[index] + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
+            memcpy(out_ack[index] + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
             if(sent_num == record2ack_pktnum.size()){
                 record2ack_pktnum.clear();
             }else{
