@@ -389,9 +389,12 @@ public:
 
     void update_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
-        rtt = arrive_time - handshake;
-        srtt = srtt * alpha + (1 - alpha) * rtt;
-        rttvar = (1 - beta) * rttvar + beta * (std::chrono::nanoseconds(std::abs((srtt - rtt).count())));
+        rtt = arrive_time - handshake;    
+        auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.cout() * alpha + (1 - alpha) * rtt.count());
+        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
+        auto diff = srtt - rtt;
+        auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * (std::chrono::nanoseconds(std::abs(diff.count()))));
+        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
         rto = srtt + 4 * rttvar;
     };
 
@@ -884,7 +887,7 @@ public:
             }
 
         }
-        auto acknowledege_result = send_elicit_ack_message_pktnum_merge(hdrs, messages, iovecs, out_ack);
+        auto acknowledege_result = send_elicit_ack_message_pktnum_merge(messages, iovecs, out_ack);
 
         if (written_len){
             stop_ack = false;
@@ -941,7 +944,7 @@ public:
             keyToValues[pn].push_back(pn);
             valueToKeys[pn] = pn;
             ack_point += sent_num;
-            std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
+            std::vector<uint8_t> wait_ack(out_ack[index].begin()+ HEADER_LENGTH, out_ack[index].end());
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             retransmission_ack[pn] = std::make_pair(std::move(wait_ack), now);
             send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
