@@ -428,6 +428,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                     send_partial = 0;
                 }
             }
+            // std::cout<<"sent:"<<sent<<", max_data:"<<max_data<<", pos:"<<pos<<", data.size()"<<data.size()<<std::endl;
             //All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
                 stop = true;
@@ -437,7 +438,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 stop = true;
                 pos = 0;
             }
-
+            
             out_off += out_len;
             return stop;
         };

@@ -5,19 +5,28 @@
 #include "connection.h"
 namespace dmludp{
 
+
+const double BETA_CUBIC = 0.7;
+
+const double C = 0.4;
+
+/// Threshold for rolling back state, as percentage of lost packets relative to
+/// cwnd.
+const size_t ROLLBACK_THRESHOLD_PERCENT = 20;
+
+/// Minimum threshold for rolling back state, as number of packets.
+const size_t MIN_ROLLBACK_THRESHOLD = 2;
+
+/// Default value of alpha_aimd in the beginning of congestion avoidance.
+const double ALPHA_AIMD = 3.0 * (1.0 - BETA_CUBIC) / (1.0 + BETA_CUBIC);
+
 // Congestion Control
 const size_t INITIAL_WINDOW_PACKETS = 10;
 
 const size_t INI_WIN = 1350 * INITIAL_WINDOW_PACKETS;
 
-// const size_t PACKET_SIZE = 1200;
 const size_t PACKET_SIZE = 1350;
 
-enum CongestionControlAlgorithm {
-    /// CUBIC congestion control algorithm (default). `cubic` in a string form.
-    NEWCUBIC = 1,
-
-};
 
 class RecoveryConfig {
     public:

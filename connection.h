@@ -466,7 +466,7 @@ public:
         }
 
         if (pkt_ty == Type::Application){
-            std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
+            // std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
             if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
@@ -530,7 +530,7 @@ public:
         auto initial_ack = valueToKeys.find(received_ack);
         
         auto check_ack = retransmission_ack.find(received_ack);
-        if(check_ack!=retransmission_ack.end()){
+        if(check_ack != retransmission_ack.end()){
             handshake = retransmission_ack.at(pkt_num).second;
         }else{
             auto timeout_check = timeout_ack.find(received_ack);
@@ -633,7 +633,11 @@ public:
             // }
         }
         if (send_buffer.pos == 0){
+            // std::cout<<std::endl;
+            // std::cout<<"[Before] send_buffer.size()"<<send_buffer.data.size()<<std::endl;
             send_buffer.recv_and_drop();
+            // std::cout<<"[After] send_buffer.size()"<<send_buffer.data.size()<<std::endl;
+            // std::cout<<std::endl;
         }    
     }
 
@@ -651,34 +655,6 @@ public:
         rec_buffer.reset();
     }
 
-    // bool send_all(){
-    //     stop_flag = false;
-    //     stop_ack = false;
-    //     waiting_flag = false;
-        
-    //     // need to change!!!!!!!!!
-    //     set_handshake();
-
-    //     if (send_data_buf.size() > 0){
-    //         auto written = write();
-    //         send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
-    //         written_data += written;
-    //         total_offset += (uint64_t)written;
-    //         return true;
-    //     }else {
-    //         if (send_buffer.data.empty()){
-    //             return false;
-    //         }else{
-    //             // continue send
-    //             auto written = write();
-    //             send_data_buf.erase(send_data_buf.begin() , send_data_buf.begin() + written);
-    //             written_data += written;
-    //             total_offset += (uint64_t)written;
-    //             return true;
-    //         }
-    //     }
-        
-    // };
     //  no loss scenario, no stop packet.
     bool receive_complete(){
         auto rlen = rec_buffer.receive_length();
@@ -772,24 +748,6 @@ public:
         written_data_once = 0;
     }
 
-    // void put_u64(std::vector<uint8_t> &vec, uint64_t input, int position){
-    //     std::vector<uint8_t> data_slice(sizeof(uint64_t));
-    //     #if IS_BIG_ENDIAN
-    //         for (int i = 0; i < sizeof(uint64_t); ++i) {
-    //             data_slice[i] = static_cast<uint8_t>(input >> ((7 - i) * 8));
-    //         }
-    //     #else 
-    //         for (int i = 0; i < sizeof(uint64_t); ++i) {
-    //             data_slice[i] = static_cast<uint8_t>(input >> (i * 8));
-    //         }
-    //     #endif
-    //     std::copy(data_slice.begin(), data_slice.end(), vec.begin() + position);
-    // };
-
-    // void put_u8(std::vector<uint8_t> &vec, uint8_t input, int position){
-    //     vec.at(position)= input;
-    // };
-
     ssize_t send_mmsg(std::vector<uint8_t> &padding, 
         std::vector<struct mmsghdr> &messages, 
         std::vector<struct iovec> &iovecs)
@@ -857,14 +815,16 @@ public:
             auto pn = 0;
 	        auto priority = 0;
 	        if (get_dmludp_error() == 0){
+                pn = pkt_num_spaces.at(0).updatepktnum();
+                // if (i == 0){
+                //     std::cout<<std::endl;
+                //     std::cout<<"[pktnum] "<<pn<<std::endl;
+                // }  
                 s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
                 out_off -= (uint64_t)out_len;
                 sent_count += 1;
                 sent_number += 1;
-                pn = pkt_num_spaces.at(0).updatepktnum();
-                if (i == 0){
-                    std::cout<<"[pktnum] "<<pn<<std::endl;
-                }     
+                   
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
@@ -879,15 +839,22 @@ public:
                 iovecs[2*i].iov_len = HEADER_LENGTH;
 		    }else{
                 if (i < dmludp_error_sent){
+                    // if (i == 0){
+                    //     std::cout<<std::endl;
+                    //     std::cout<<"[11 pktnum] start pn:"<<first_application_pktnum<<std::endl;
+                    // }
 			        send_buffer.emit(iovecs[0], out_len, out_off);
                     continue;
                 }
-
+                // if(i == dmludp_error_sent){
+                //     std::cout<<"[11 pktnum] refill"<<std::endl;
+                // }
+                
                 s_flag = send_buffer.emit(iovecs[(i-dmludp_error_sent)*2+1], out_len, out_off);
                 out_off -= (uint64_t)out_len;
 
                 pn = first_application_pktnum + i;
-                std::cout<<"[11 pktnum] "<<pn<<std::endl;
+                // std::cout<<"[11 pktnum] "<<pn<<std::endl;
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
@@ -957,7 +924,7 @@ public:
                         messages.resize(i + 1 - dmludp_error_sent);
                     }
                 }
-                std::cout<<"[Debug] i ="<<std::endl;
+                // std::cout<<"[Debug] i ="<<i<<std::endl;
                 break;
             }
 
@@ -1447,19 +1414,6 @@ public:
 
     }
 
-
-    // void addUint64(std::vector<uint8_t>& v, uint64_t input){
-    //     #if  IS_BIG_ENDIAN
-    //     for (size_t i = 0; i < sizeof(uint64_t); ++i) {
-    //         v.push_back(static_cast<uint8_t>(input >> (i * 8)));
-    //     }
-    //     #else
-    //     for (int i = sizeof(uint64_t) - 1; i >= 0; --i) {
-    //         v.push_back(static_cast<uint8_t>(input >> (i * 8)));
-    //     }
-    //     #endif
-    // };
-
     //Send single packet
     size_t send_data(uint8_t* out){
         // size_t done = 0;
@@ -1594,40 +1548,6 @@ public:
         // return rec_buffer.first_item_len();
     }
 
-    //Writing data to send buffer.
-    // size_t write() {
-    //     if (send_buffer.data.empty()){
-    //         auto toffset = total_offset % 1024;
-    //         size_t off_len = 0;
-    //         if (toffset % 1024 != 0){
-    //             off_len = (size_t)(1024 - (total_offset % 1024));
-    //         }
-    //         auto high_ratio = (double)high_priority  / (double)sent_number;
-    //         high_priority = 0;
-    //         sent_number = 0;
-    //         // Note: written_data refers to the non-retransmitted data.
-
-    //         size_t congestion_window = 0;
-    //         if (high_ratio > CONGESTION_THREAHOLD){
-    //             congestion_window = recovery.rollback();
-    //         }else{
-    //             congestion_window = recovery.cwnd();
-    //         };
-    //         record_win = congestion_window;
-    //         // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
-    //         // return result;
-    //         return 0;
-    //     }else{
-    //         auto congestion_window = record_win;
-    //         size_t off_len = 0;
-
-    //         // auto result = send_buffer.write(send_data_buf, congestion_window, off_len, max_off);
-    //         // return result;
-    //         return 0;
-    //     }
-
-    // };
-
     uint8_t priority_calculation(uint64_t off){
         auto real_index = (uint64_t)(off/1350);
         return norm2_vec[real_index];
@@ -1638,21 +1558,6 @@ public:
         send_buffer.clear();
     };
 
-    // void check_loss(std::vector<uint8_t> b){
-    //     int start = 0;
-    //     while (b.size()>0) {
-    //         auto offset = Header::get_u64(b, start);
-    //         start += sizeof(uint64_t);
-    //         if (recv_dic.find(offset)!= recv_dic.end()){
-    //             recv_hashmap.insert(std::make_pair(offset, 0));
-    //         }else{
-    //             recv_hashmap.insert(std::make_pair(offset, 1));
-    //         }
-    //         if (start >= b.size()){
-    //             break;
-    //         }
-    //     }
-    // }
 
     void check_loss_pktnum(uint8_t* src, size_t src_len){
         uint64_t start = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH);

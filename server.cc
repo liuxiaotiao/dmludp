@@ -286,12 +286,17 @@ int main() {
 
                             if (errno == EAGAIN){
                                 dmludp_set_error(dmludp_connection, EAGAIN, sent);
-                                std::cout<<"[EAGAIN] "<<sent<<std::endl;
+                                // std::cout<<"[EAGAIN] "<<sent<<std::endl;
                             }
                             break;
                         }
                         sent += retval;
                     }
+
+                    if (messages.size() != sent){
+                        continue;
+                    }
+
 
                     if (has_error == 11 && (sent == messages.size())){
                         dmludp_set_error(dmludp_connection, 0, 0);
