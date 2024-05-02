@@ -174,7 +174,7 @@ int main() {
         inner_vector.reserve(44);  // 预分配内部向量
         out_ack.push_back(inner_vector);
     }
-    
+
     auto start = std::chrono::high_resolution_clock::now();
 
     size_t send_time = 1;
@@ -265,7 +265,7 @@ int main() {
                     auto now = std::chrono::high_resolution_clock::now();
                     if (result > 0){
                         for(auto e : out){
-                        auto sent = ::send(server_fd, e.data(), e.size(), 0);
+                            auto sent = ::send(server_fd, e.data(), e.size(), 0);
                         }
                     }
                     if (dmludp_transmission_complete(dmludp_connection)){
@@ -293,8 +293,8 @@ int main() {
                         }
                         need_to_send = messages.size();
                     }else{
-                        need_to_send = messages.size() - dmludp_get_dmludp_error(dmludp_connection);
-                        before_error_sent = dmludp_get_dmludp_error(dmludp_connection);
+                        need_to_send = messages.size() - dmludp_get_error_sent(dmludp_connection);
+                        before_error_sent = dmludp_get_error_sent(dmludp_connection);
                     }   
 
                     while(need_to_send > sent){
@@ -316,12 +316,12 @@ int main() {
                         sent += retval;
                     }
 
-                    if (messages.size() != sent){
+                    if (need_to_send != sent){
                         continue;
                     }
                     
 
-                    if (has_error == 11 && (sent == messages.size())){
+                    if (has_error == 11 && (sent == need_to_send)){
                         dmludp_set_error(dmludp_connection, 0, 0);
                     }
 
@@ -330,16 +330,6 @@ int main() {
                     iovecs_.clear();
                     out_ack.clear();
 
-                    // while (true){
-                    //     std::vector<uint8_t> out;
-                    //     ssize_t ack_len = dmludp_send_elicit_ack_message(dmludp_connection, out);
-                    //     if (ack_len == -1){
-                    //         break;
-                    //     }
-                    //     if (ack_len > 0){
-                    //         auto socketwrite = ::send(server_fd, out.data(), out.size(), 0);
-                    //     }
-                    // }
                 }
             }
         }

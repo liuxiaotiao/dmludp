@@ -30,7 +30,6 @@ enum dmludp_error {
     // The provided buffer is transmitted.
     DMLUDP_ERR_STOP = -3,
 
-
     // The operation cannot be completed because the connection is in an
     // invalid state.
     DMLUDP_ERR_INVALID_STATE = -6,
@@ -95,12 +94,6 @@ inline void dmludp_set_rtt(std::shared_ptr<Connection> conn, long interval){
     conn->set_rtt(interval);
 }
 
-// Write data from application to protocal
-// inline void dmludp_data_write(Connection* conn, const uint8_t* buf, size_t len){
-// inline void dmludp_data_write(std::shared_ptr<Connection> conn, const uint8_t* buf, size_t len){
-//     conn->data_write(buf, len);
-// }
-
 // Date: 7th Jan 2024
 inline size_t dmludp_data_write(std::shared_ptr<Connection> conn, uint8_t* buf, size_t len){
     return conn->data_write(buf, len);
@@ -147,23 +140,9 @@ inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, 
     return written;
 }
 
-// inline ssize_t dmludp_send_elicit_ack(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-//     std::vector<uint8_t> out_vector(out_len);
-//     ssize_t written = conn->send_elicit_ack(out_vector);
-//     if (written > 0)
-//         memcpy(out, out_vector.data(), written);
-//     return written;
-// }
-
 inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
     return conn->enable_adding();
 }
-
-// Fill up congestion control window
-// inline bool dmludp_conn_send_all(Connection* conn) {
-// inline bool dmludp_conn_send_all(std::shared_ptr<Connection> conn) {
-//     return conn->send_all();
-// }
 
 // inline bool dmludp_conn_is_empty(Connection* conn){
 inline bool dmludp_conn_is_empty(std::shared_ptr<Connection> conn){
@@ -207,19 +186,6 @@ inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
     return conn->is_waiting();
 }
 
-// inline ssize_t dmludp_send_data_handshake(Connection* conn, uint8_t* out, size_t out_len){
-// inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
-//     if (out_len <= 0 ){
-//         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
-//     }
-
-//     std::vector<uint8_t> out_vector(out_len);
-//     size_t written = conn->send_data_handshake(out_vector);
-//     std::copy(out_vector.begin(), out_vector.begin() + written, out);
-//     // memcpy(out, out_vector.data(), written);
-//     return static_cast<ssize_t>(written);
-// }
-
 inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
     if (out_len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
@@ -239,10 +205,6 @@ inline bool dmludp_conn_has_recv(std::shared_ptr<Connection> conn){
     return conn->has_recv();
 }
 
-// inline void dmludp_conn_free(Connection* conn) {
-// inline void dmludp_conn_free(std::shared_ptr<Connection> conn) {
-//     delete conn;
-// }
 
 inline size_t dmludp_conn_data_sent_once(std::shared_ptr<Connection> conn){
     return conn->get_once_data_len();
@@ -340,7 +302,7 @@ inline void dmludp_conn_clear_sent_once(std::shared_ptr<Connection> conn){
 }
 
 inline bool dmludp_conn_receive_complete(std::shared_ptr<Connection> conn){
-return    conn->receive_complete();
+    return conn->receive_complete();
 }
 
 inline void dmludp_conn_rx_len(std::shared_ptr<Connection> conn, size_t expected){
