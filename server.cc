@@ -237,7 +237,7 @@ int main() {
                                         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
                                         dmludp_conn_clear_sent_once(dmludp_connection);
                                         // 输出执行时间
-                                        std::cout << send_time++ << " Duration: " << duration.count() << " milliseconds" << std::endl;
+                                        std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
                                         if (send_time == 100){
                                             return 0;
                                         } 

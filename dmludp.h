@@ -70,7 +70,7 @@ inline void dmludp_config_free(Config* config){
     delete config;
 }
 
-inline int dmludp_header_info(uint8_t* data, size_t buf_len, int &off, int &pn) {
+inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint64_t &off, uint64_t &pn) {
     auto result = reinterpret_cast<Header *>(data)->ty;
     pn = reinterpret_cast<Header *>(data)->pkt_num;
     // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
@@ -95,9 +95,9 @@ inline void dmludp_set_rtt(std::shared_ptr<Connection> conn, long interval){
 }
 
 // Date: 7th Jan 2024
-inline size_t dmludp_data_write(std::shared_ptr<Connection> conn, uint8_t* buf, size_t len){
-    return conn->data_write(buf, len);
-}
+// inline size_t dmludp_data_write(std::shared_ptr<Connection> conn, uint8_t* buf, size_t len){
+//     return conn->data_write(buf, len);
+// }
 
 inline bool dmludp_get_data(std::shared_ptr<Connection> conn, struct iovec *iovecs, int iovecs_len){
     return conn->get_data(iovecs, iovecs_len);
@@ -276,11 +276,7 @@ inline ssize_t dmludp_data_read(std::shared_ptr<Connection> conn, void* buf, siz
     if(len == 0){
         return dmludp_error::DMLUDP_ERR_BUFFER_TOO_SHORT;
     }
-
-//  raw pointer, remove vector
-    // std::vector<uint8_t> data_slice(len);
     size_t result = conn->read(static_cast<uint8_t*>(buf), iscopy, len);
-
 
     return static_cast<ssize_t>(result);
 }

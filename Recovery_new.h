@@ -2,17 +2,14 @@
 
 #include <cmath>
 #include <set>
-#include "gloo/connection.h"
+#include "connection.h"
 namespace dmludp{
 
 // Congestion Control
-const size_t INITIAL_WINDOW_PACKETS = 8;
+//  initial cwnd = min (10*MSS, max (2*MSS, 14600)) 
+const size_t INITIAL_WINDOW_PACKETS = 10;
 
-const size_t ELICT_ACK_CONSTANT = 8;
-
-const size_t MINIMUM_WINDOW_PACKETS = 2;
-
-const size_t INI_WIN = 1350 * 8;
+const size_t INI_WIN = 1350 * INITIAL_WINDOW_PACKETS;
 
 // const size_t PACKET_SIZE = 1200;
 const size_t PACKET_SIZE = 1350;
@@ -25,7 +22,9 @@ enum CongestionControlAlgorithm {
 
 class RecoveryConfig {
     public:
-    RecoveryConfig(){
+    size_t max_send_udp_payload_size;
+
+    RecoveryConfig():max_send_udp_payload_size(PACKET_SIZE){
 
     };
 
@@ -45,11 +44,10 @@ class Recovery{
     size_t bytes_in_flight;
 
     size_t max_datagram_size;
-
     // k:f64,
-    double incre_win;
+    size_t incre_win;
 
-    double decre_win;
+    size_t decre_win;
 
     std::set<size_t> former_win_vecter;
 
@@ -94,45 +92,41 @@ class Recovery{
         double winadd = 0;
         roll_back_flag = false;
         if (weights > 0){
-            // winadd = (3 * pow((double)weights, 2) - 12 * (double)weights + 4) * (double)max_datagram_size;
-            // winadd = (3 * pow((double)weights, 2) - 12 * (double)weights + 4);
-            winadd = (4 * pow((double)weights, 2) - 16 * (double)weights + 8);
+            winadd = (3 * pow((double)weights, 2) - 12 * (double)weights + 4) * (double)max_datagram_size;
             roll_back_flag = true;
         }else{
-            // winadd = num * (double)max_datagram_size; 
-            winadd = num;
+            winadd = num * (double)max_datagram_size; 
         }
 
         if (winadd > 0){
-            incre_win += winadd;
+            incre_win += (size_t)winadd;
         }else {
-            decre_win += (-winadd);
+            decre_win += (size_t)(-winadd);
         }
     };
 
     size_t cwnd(){
-        double tmp_win = 0;
-        if ((2 * incre_win) > decre_win){
-            tmp_win = 2 * incre_win - decre_win;
+        size_t tmp_win = 0;
+        if (2*incre_win > decre_win){
+            tmp_win = 2*incre_win - decre_win;
         }else{
             tmp_win = 0;
         }
         
-        if (!roll_back_flag && ((size_t)tmp_win > INITIAL_WINDOW_PACKETS)) {
-            size_t record_cwnd = (size_t)tmp_win * PACKET_SIZE;
-            former_win_vecter.insert(record_cwnd);
-            if (record_cwnd > last_cwnd){
+        if (!roll_back_flag && (tmp_win > INI_WIN)) {
+            former_win_vecter.insert(tmp_win);
+            if (tmp_win > last_cwnd){
                 former_win_vecter.insert(last_cwnd);
             }
         }
 
-        congestion_window = (size_t)tmp_win * PACKET_SIZE;
-        last_cwnd = (size_t)tmp_win * PACKET_SIZE;
+        congestion_window = tmp_win;
+        last_cwnd = tmp_win;
         parameter_reset();
         if (congestion_window < INI_WIN){
-            // Fix every time, cwnd will start from initial window;
-            if (!former_win_vecter.empty()){
-                congestion_window = former_win_vecter.back();
+            /// Fix every time, cwnd will start from initial window;
+            if (!former_win_vecter.empty()  && incre_win == max_datagram_size){
+                congestion_window = *former_win_vecter.rbegin();
             }else{
                 congestion_window = INI_WIN;
                 tmp_win = INI_WIN;

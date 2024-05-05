@@ -51,18 +51,23 @@ namespace dmludp{
 
         uint64_t offset;
 
-        uint64_t pkt_length;
+        uint8_t difference;
+
+        uint16_t pkt_length;
+
 
         Header(
             Type first, 
             uint64_t pktnum, 
             uint8_t priority, 
-            uint64_t off, 
-            uint64_t len) 
+            uint64_t off,
+            uint8_t difference,
+            uint16_t len) 
             : ty(first), 
             pkt_num(pktnum), 
             priority(priority), 
             offset(off), 
+            difference(difference),
             pkt_length(len) {};
 
         ~Header() {};
@@ -100,13 +105,19 @@ namespace dmludp{
             off += sizeof(uint8_t);
             put_u64(out, offset, off);
             off += sizeof(uint64_t);
-            put_u64(out, pkt_length, off);
+            put_u8(out, difference, off);
+            off += sizeof(uint8_t);
+            put_u16(out, pkt_length, off);
 
         };
 
         void put_u64(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
             memcpy(vec.data() + position, &input, sizeof(uint64_t));
         };
+
+        void put_u16(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
+            memcpy(vec.data() + position, &input, sizeof(uint16_t));
+        }
 
         void put_u8(std::vector<uint8_t> &vec, uint8_t input, size_t position){
             vec.at(position)= input;

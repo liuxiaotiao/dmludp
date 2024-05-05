@@ -20,14 +20,14 @@
 namespace dmludp {
 
 
-const size_t HEADER_LENGTH = 26;
+const size_t HEADER_LENGTH = 21;
 
 const size_t MAX_ACK_NUM = 160;
 
 const size_t MAX_ACK_NUM_PKTNUM = 1350;
 
 const size_t ELICIT_FLAG = 8;
-// use crate::ranges;
+
 const double CONGESTION_THREAHOLD = 0.01;
 
 /// The minimum length of Initial packets sent by a client.
@@ -48,7 +48,9 @@ using Priority_len = uint8_t;
 
 using Offset_len = uint64_t;
 
-using Packet_len = uint64_t;
+using Difference_len = uint8_t;
+
+using Packet_len = uint16_t;
 
 struct SendInfo {
     /// The local address the packet should be sent from.
@@ -104,7 +106,7 @@ public:
 
     ~Config(){
 
-    };
+    }; 
 
     /// Sets the `max_idle_timeout` transport parameter, in milliseconds.
     /// same with tcp max idle timeout
@@ -128,7 +130,7 @@ public:
 
     ~Received_Record_Debug(){};
 
-    void add_offset_and_pktnum(uint64_t pn, uint64_t offset, uint64_t len){
+    void add_offset_and_pktnum(uint64_t pn, uint64_t offset, uint16_t len){
         pktnum2offset.emplace(pn, std::make_pair(offset, len));
     };
 
@@ -231,10 +233,10 @@ public:
 
     std::unordered_map<uint64_t, uint8_t> recv_dic;
 
-    //store data
+    // store data
     std::vector<uint8_t> send_data_buf;
 
-    //store norm2 for every 256 bits float
+    // store norm2 for every 256 bits float
     // Note: It refers to the priorty of each packet.
     std::vector<uint8_t> norm2_vec;
 
@@ -336,6 +338,13 @@ public:
 
     const static uint8_t fin_header[HEADER_LENGTH];
 
+    // when get new data flow, send_connection_difference++
+    uint8_t send_connection_difference;
+
+    // receive_connection_difference keeps current data flow send_connection_difference. 
+    // If receive_complete() is true, receive_connection_difference++ to keep track with send_connection_difference.
+    uint8_t receive_connection_difference;
+
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
     sent_count(0),
@@ -380,7 +389,9 @@ public:
     rx_length(0),
     dmludp_error_sent(0),
     start_receive_offset(0),
-    first_application_pktnum(0)
+    first_application_pktnum(0),
+    send_connection_difference(0),
+    receive_connection_difference(1),
     {};
 
     ~Connection(){
@@ -410,11 +421,12 @@ public:
         }
     };
 
-    Type header_info(uint8_t* src, size_t src_len, uint64_t &pkt_num, uint8_t &pkt_priorty, uint64_t &pkt_offset, uint64_t &pkt_len){
+    Type header_info(uint8_t* src, size_t src_len, Packet_num_len &pkt_num, Priority_len &pkt_priorty, Offset_len &pkt_offset, Difference_len &pkt_difference, Packet_len &pkt_len){
         auto pkt_ty = reinterpret_cast<Header *>(src)->ty;
         pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
         pkt_priorty = reinterpret_cast<Header *>(src)->priority;
         pkt_offset = reinterpret_cast<Header *>(src)->offset;
+        pkt_difference = reinterpret_cast<Header *>(src)->difference
         pkt_len = reinterpret_cast<Header *>(src)->pkt_length;
         return pkt_ty;
     }
@@ -422,11 +434,17 @@ public:
     size_t recv_slice(uint8_t* src, size_t src_len){
         recv_count += 1;
 
-        uint64_t pkt_num;
-        uint8_t pkt_priorty;
-        uint64_t pkt_offset;
-        uint64_t pkt_len;
-        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_len);
+        // uint64_t pkt_num;
+        // uint8_t pkt_priorty;
+        // uint64_t pkt_offset;
+        // uint16_t pkt_len;
+
+        Packet_num_len pkt_num;
+        Priority_len pkt_priorty;
+        Offset_len pkt_offset;
+        Difference_len pkt_difference;
+        Packet_len pkt_len;
+        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_difference, pkt_len);
        
         size_t read_ = 0;
 
@@ -467,29 +485,32 @@ public:
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
             }
-            // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
-            if (pkt_offset == 0){
-                clear_recv_setting();
-            }
 
-            // Debug
-            if (recv_dic.find(pkt_offset) != recv_dic.end()){
-                // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
-                // RRD.show();
-                // _Exit(0);
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+            if (receive_connection_difference == pkt_difference){
+                // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
+                if (pkt_offset == 0){
+                    clear_recv_setting();
+                }
+
                 // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            }else{
-                recv_count += 1;
-            
-                // optimize to reduce copy time.
-                rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-                // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                if (recv_dic.find(pkt_offset) != recv_dic.end()){
+                    // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
+                    // RRD.show();
+                    // _Exit(0);
+                    receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                    // Debug
+                    recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                }else{
+                    recv_count += 1;
+                
+                    // optimize to reduce copy time.
+                    rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
+                    receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                    // Debug
+                    recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                }
             }
-            
+                     
         }
 
         // In dmludp.h
@@ -512,11 +533,12 @@ public:
 
     // remove unnessary vectore construct
     void process_ack(uint8_t* src, size_t src_len){
-        uint64_t pkt_num;
-        uint8_t pkt_priorty;
-        uint64_t pkt_offset;
-        uint64_t pkt_len;
-        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_len);
+        Packet_num_len pkt_num;
+        Priority_len pkt_priorty;
+        Offset_len pkt_offset;
+        Difference_len pkt_difference;
+        Packet_len pkt_len;
+        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_difference, pkt_len);
 
         if (ack_set.empty()){
             stop_ack = true;
@@ -659,6 +681,7 @@ public:
 	    // std::cout<<"[Compare] rx_length:"<<rx_length<<" "<<(rx_length == rlen)<<" rlen:"<<rlen<<std::endl;
         if (rx_length == rlen){
             // RRD.clear();
+            receive_connection_difference++;
             return true;
         }
         return false;
@@ -712,6 +735,8 @@ public:
             completed = false;
             return completed;
         }
+
+        send_connection_difference++;
         for (auto i = 0 ; i < iovecs_len; i++){
             data_buffer.emplace_back(reinterpret_cast<uint8_t*>(iovecs[i].iov_base), iovecs[i].iov_len);
             written_data_once += iovecs[i].iov_len;
@@ -806,8 +831,8 @@ public:
         messages.resize(send_buffer.data.size());
 
         for (auto i = 0; ; ++i){
-            size_t out_len = 0; 
-            uint64_t out_off = 0;
+            Packet_len out_len = 0; 
+            Offset_len out_off = 0;
             bool s_flag = false;
             auto pn = 0;
             auto priority = 0;
@@ -815,7 +840,7 @@ public:
                 pn = pkt_num_spaces.at(0).updatepktnum();
 
                 s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
-                out_off -= (uint64_t)out_len;
+                out_off -= (uint16_t)out_len;
                 sent_count += 1;
                 sent_number += 1;
                 
@@ -826,7 +851,7 @@ public:
                     first_application_pktnum = pn;
                 }
         
-                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
+                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_connection_difference, out_len);
                 hdrs.push_back(hdr);
                 iovecs[2*i].iov_base = (void *)hdr.get();
                 iovecs[2*i].iov_len = HEADER_LENGTH;
@@ -843,14 +868,14 @@ public:
                 priority = priority_calculation(out_off);
                 Type ty = Type::Application;
 
-                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
+                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_connection_difference, out_len);
                 hdrs.push_back(hdr);
                 iovecs[2*(i-dmludp_error_sent)].iov_base = (void *)hdr.get();
                 iovecs[2*(i-dmludp_error_sent)].iov_len = HEADER_LENGTH;
             }
             auto offset = out_off;
             if (sent_dic.find(out_off) != sent_dic.end()){
-                if (sent_dic[out_off] != 3&& ((get_dmludp_error() != 11))){
+                if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
                     sent_dic[out_off] -= 1;
                 }
             }else{
@@ -860,10 +885,10 @@ public:
             if (get_dmludp_error() == 0){
                 record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
-                messages[i].msg_hdr.msg_iov = &iovecs[2*i];
+                messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
                 messages[i].msg_hdr.msg_iovlen = 2;
             }else{
-                messages[i - dmludp_error_sent].msg_hdr.msg_iov = &iovecs[2*(i-dmludp_error_sent)];
+                messages[i - dmludp_error_sent].msg_hdr.msg_iov = &iovecs[2*(i - dmludp_error_sent)];
                 messages[i - dmludp_error_sent].msg_hdr.msg_iovlen = 2;
             }
 
@@ -911,7 +936,6 @@ public:
             index++;
         }
 
-        
 
         if (written_len){
             stop_ack = false;
@@ -951,7 +975,7 @@ public:
             uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
 
             auto pn = pkt_num_spaces.at(1).updatepktnum();
-            Header* hdr = new Header(ty, pn, 0, 0, 0);
+            Header* hdr = new Header(ty, pn, 0, 0, send_connection_difference, 0);
 
             hdr->to_bytes(out_ack[index]);
             memcpy(out_ack[index].data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
@@ -1234,7 +1258,7 @@ public:
         uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
 
         auto pn = pkt_num_spaces.at(1).updatepktnum();
-        Header* hdr = new Header(ty, pn, 0, 0, pktlen);
+        Header* hdr = new Header(ty, pn, 0, 0, send_connection_difference, pktlen);
         // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
         out.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
@@ -1294,7 +1318,7 @@ public:
             // std::cout<<"[Elicit] Elicit acknowledge packet(time out) num:"<<pktnum<<std::endl;
             // auto ty = Type::ElicitAck;
             size_t pktlen = retransmission_ack.at(n).first.size();
-            Header* hdr = new Header(ty, pktnum, 0, 0, pktlen);
+            Header* hdr = new Header(ty, pktnum, 0, 0, send_connection_difference, pktlen);
             pktlen += HEADER_LENGTH;
             out_buffer.resize(pktlen);
 
@@ -1329,7 +1353,7 @@ public:
             uint64_t start_send_pn;
             uint64_t end_send_pn;
             memcpy(&start_send_pn, wait_ack.data(), sizeof(uint64_t));
-            memcpy(&end_send_pn, wait_ack.data()+sizeof(uint64_t), sizeof(uint64_t));
+            memcpy(&end_send_pn, wait_ack.data() + sizeof(uint64_t), sizeof(uint64_t));
             // std::cout<<"1 pktnum:"<<pktnum<<" send_timeout_elicit_ack_message send_pkt_duration"<<std::endl;
             // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
             //     std::cout << "Key: " << it->first << std::endl;
@@ -1575,8 +1599,6 @@ public:
         }
 
         return Type::Unknown;
-
-        // Err(Error::Done)
     };
 
     // Send buffer is empty or not. If it is empty, send_all() will try to fill it with new data.
@@ -1601,30 +1623,30 @@ public:
     }
     
     // Date: 7th Jan, 2024
-    size_t data_write(uint8_t* buf, size_t length){
-        if (!norm2_vec.empty()){
-            norm2_vec.clear();
-        }
+    // size_t data_write(uint8_t* buf, size_t length){
+    //     if (!norm2_vec.empty()){
+    //         norm2_vec.clear();
+    //     }
 
-        size_t len = 0;
-        if (length % 1350 == 0){
-            len = length / 1350;
-        }else{
-            len = length / 1350 + 1;
-        }
+    //     size_t len = 0;
+    //     if (length % 1350 == 0){
+    //         len = length / 1350;
+    //     }else{
+    //         len = length / 1350 + 1;
+    //     }
 
-        if (data_buffer.empty())
-            total_offset = 0;
+    //     if (data_buffer.empty())
+    //         total_offset = 0;
 
-        norm2_vec.insert(norm2_vec.begin(), len, 3);
+    //     norm2_vec.insert(norm2_vec.begin(), len, 3);
 
-        send_buffer.clear();
+    //     send_buffer.clear();
 
-        return length;
-    }
+    //     return length;
+    // }
 };
 
-const uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-const uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 }
