@@ -243,9 +243,10 @@ inline ssize_t dmludp_conn_recv(std::shared_ptr<Connection> conn, uint8_t* buf, 
     if (received == 0){
         uint64_t pkt_num;
         uint8_t pkt_priorty;
-        uint64_t pkt_offset;
-        uint64_t pkt_len;
-        auto ty = conn->header_info(buf, out_len, pkt_num, pkt_priorty, pkt_offset, pkt_len);
+        uint32_t pkt_offset;
+        uint64_t pkt_seq;
+        uint16_t pkt_len;
+        auto ty = conn->header_info(buf, out_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_len);
         if (ty == Type::Stop){
             return dmludp_error::DMLUDP_ERR_STOP;
         }
