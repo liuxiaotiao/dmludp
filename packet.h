@@ -10,6 +10,21 @@
 #include <memory>
 
 namespace dmludp{
+
+using Type_len = uint8_t;
+
+using Packet_num_len = uint64_t;
+
+using Priority_len = uint8_t;
+
+using Offset_len = uint32_t;
+
+// using Difference_len = uint8_t;
+
+using Acknowledge_sequence_len = uint64_t;
+
+using Packet_len = uint16_t;
+
     enum Type : uint8_t {
         /// Retry packet.
         Retry = 0x01,
@@ -45,29 +60,31 @@ namespace dmludp{
         /// The type of the packet.
         Type ty;
 
-        uint64_t pkt_num;
+        Packet_num_len pkt_num;
 
-        uint8_t priority;
+        Priority_len priority;
 
-        uint64_t offset;
+        Offset_len offset;
 
-        uint8_t difference;
+        // uint8_t difference;
 
-        uint16_t pkt_length;
+        Acknowledge_sequence_len seq;
+
+        Packet_len pkt_length;
 
 
         Header(
             Type first, 
-            uint64_t pktnum, 
-            uint8_t priority, 
-            uint64_t off,
-            uint8_t difference,
-            uint16_t len) 
+            Packet_num_len pktnum, 
+            Priority_len priority, 
+            Offset_len off,
+            Acknowledge_sequence_len seq,
+            Packet_len len) 
             : ty(first), 
             pkt_num(pktnum), 
             priority(priority), 
             offset(off), 
-            difference(difference),
+            seq(seq),
             pkt_length(len) {};
 
         ~Header() {};
@@ -99,14 +116,17 @@ namespace dmludp{
             
             off += sizeof(uint8_t);
             put_u64(out, pkt_num, off);
-            off += sizeof(uint64_t);
 
+            off += sizeof(Packet_num_len);
             put_u8(out, priority, off);
-            off += sizeof(uint8_t);
-            put_u64(out, offset, off);
-            off += sizeof(uint64_t);
-            put_u8(out, difference, off);
-            off += sizeof(uint8_t);
+
+            off += sizeof(Priority_len);
+            put_u32(out, offset, off);
+
+            off += sizeof(Offset_len);
+            put_u64(out, seq, off);
+            
+            off += sizeof(Acknowledge_sequence_len);
             put_u16(out, pkt_length, off);
 
         };
@@ -114,6 +134,10 @@ namespace dmludp{
         void put_u64(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
             memcpy(vec.data() + position, &input, sizeof(uint64_t));
         };
+
+        void put_u32(std::vector<uint8_t> &vec, uint32_t &input, size_t position){
+            memcpy(vec.data() + position, &input, sizeof(uint16_t));
+        }
 
         void put_u16(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
             memcpy(vec.data() + position, &input, sizeof(uint16_t));

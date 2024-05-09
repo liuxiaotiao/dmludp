@@ -110,17 +110,16 @@ inline size_t dmludp_get_error_sent(std::shared_ptr<Connection> conn){
 inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn, 
     std::vector<std::shared_ptr<Header>> &hdrs, 
     std::vector<struct mmsghdr> &messages, 
-    std::vector<struct iovec> &iovecs,
-    std::vector<std::vector<uint8_t>> &out_ack){
+    std::vector<struct iovec> &iovecs){
     return conn->send_mmsg(hdrs, messages, iovecs, out_ack);
 }
 
-inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
-    std::vector<uint8_t> &padding, 
-    std::vector<struct msghdr> &messages, 
-    std::vector<struct iovec> &iovecs){
-    return conn->send_msg(padding, messages, iovecs);
-}
+// inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
+//     std::vector<uint8_t> &padding, 
+//     std::vector<struct msghdr> &messages, 
+//     std::vector<struct iovec> &iovecs){
+//     return conn->send_msg(padding, messages, iovecs);
+// }
 
 inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
     return conn->transmission_complete();
@@ -131,13 +130,18 @@ inline ssize_t dmludp_send_timeout_elicit_ack_message(std::shared_ptr<Connection
     return written; 
 }
 
-inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, std::vector<uint8_t> &out){
-    std::vector<uint8_t> out_vector(1500);
-    // ssize_t written = conn->send_elicit_ack_message(out_vector);
-    ssize_t written = conn->send_elicit_ack_message_pktnum(out_vector);
-    if (written > 0)
-        out = std::move(out_vector);
-    return written;
+// inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, std::vector<uint8_t> &out){
+//     std::vector<uint8_t> out_vector(1500);
+//     // ssize_t written = conn->send_elicit_ack_message(out_vector);
+//     ssize_t written = conn->send_elicit_ack_message_pktnum(out_vector);
+//     if (written > 0)
+//         out = std::move(out_vector);
+//     return written;
+// }
+
+inline ssize_t dmludp_send_data_acknowledge(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
+    return conn->send_data_acknowledge(out, out_len);
+
 }
 
 inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){

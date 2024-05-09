@@ -143,6 +143,8 @@ int main() {
                         msgs[i].msg_hdr.msg_namelen = 0;
                     }
 
+                    bool is_application = false;
+
                     while(true){
                         auto retval = recvmmsg(client_fd, msgs, 100, 0, NULL);
                         if (retval == -1){
@@ -189,6 +191,11 @@ int main() {
                                 }
                             }
                         }
+                    }
+                    if(is_application){
+                        uint8_t ack[1500];
+                        auto result = dmludp_send_data_acknowledge(ack, sizeof(ack));
+                        auto sent_result = ::send(client_fd, ack, result, 0);
                     }
                 }
                 
