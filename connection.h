@@ -344,6 +344,10 @@ public:
     // If receive_complete() is true, receive_connection_difference++ to keep track with send_connection_difference.
     uint8_t receive_connection_difference;
 
+    size_t current_loop_min;
+
+    size_t current_loop_min;
+
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
     sent_count(0),
@@ -390,7 +394,9 @@ public:
     start_receive_offset(0),
     first_application_pktnum(0),
     send_connection_difference(0),
-    receive_connection_difference(1)
+    receive_connection_difference(1),
+    current_loop_min(0),
+    current_loop_max(0)
     {};
 
     ~Connection(){
@@ -484,7 +490,13 @@ public:
             if (pkt_offset == 0){
                 clear_recv_setting();
             }
+            if (pkt_num > current_loop_max){
+                current_loop_max = pkt_num;
+            }
 
+            if (pkt_num < current_loop_min){
+                current_loop_min = pkt_num;
+            }
             send_num = pkt_seq;
 
             // Debug
@@ -518,6 +530,10 @@ public:
     bool send_ack(){
         return feed_back;
     };
+
+    void update_receive_parameter(){
+        current_loop_min = current_loop_max + 1;
+    }
 
 
     // remove unnessary vectore construct
@@ -883,12 +899,13 @@ public:
             }
 
         }
-
+        auto ack_index = 0;
         while (true){
-            auto result = generate_elicit_ack_message(ack_seq_vector);
+            auto result = generate_elicit_ack_message(ack_seq_vector, ack_index);
             if (result == false){
                 break;
             }
+            ack_index++;
         }
 
 
@@ -905,45 +922,43 @@ public:
         return dmludp_error_sent;
     }
 
-    bool generate_elicit_ack_message(std::vector<uint64_t> ack_seq_vector){
+    bool generate_elicit_ack_message(std::vector<uint64_t> ack_seq_vector, int index_){
         auto ty = Type::ElicitAck;        
-        size_t preparenum = record2ack_pktnum.size();
-
-        size_t sent_num = 0;
-        int index = 0;
-        size_t pktlen = 0;
+        auto preparenum = record2ack_pktnum.size();
         if(record2ack_pktnum.empty()){
             return false;
         }
 
-        while(sent_num != record2ack_pktnum.size()){
-            sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
+        size_t pktlen = 0;
 
-            uint64_t start_pktnum = record2ack_pktnum[0];  
+        uint64_t start_pktnum = record2ack_pktnum[0];
+        
+        size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
 
-            uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
+        uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
 
-            auto pn = ack_seq_vector[index];
+        auto pn = ack_seq_vector[index_];
+        // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
 
-            if(sent_num == record2ack_pktnum.size()){
-                record2ack_pktnum.clear();
-            }else{
-                record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
-            }
-
-            ack_set.insert(pn);
-            keyToValues[pn].push_back(pn);
-            valueToKeys[pn] = pn;
-            ack_point += sent_num;
-            std::vector<uint8_t> wait_ack(sizeof(uint64_t) * 2);
-            memcpy(wait_ack.data(), &start_pktnum, sizeof(uint64_t));
-            memcpy(wait_ack.data() + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            retransmission_ack[pn] = std::make_pair(std::move(wait_ack), now);
-            send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
-
-            index++;   
+        if(sent_num == record2ack_pktnum.size()){
+            record2ack_pktnum.clear();
+        }else{
+            record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
         }
+
+        ack_set.insert(pn);
+        keyToValues[pn].push_back(pn);
+        valueToKeys[pn] = pn;
+        ack_point += sent_num;
+        std::vector<uint8_t> wait_ack(2 * sizeof(uint64_t));
+        memcpy(wait_ack.data(), &start_pktnum, sizeof(uint64_t));
+        memcpy(wait_ack.data() + sizeof(uint64_t), &start_pktnum, sizeof(uint64_t));
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        retransmission_ack[pn] = std::make_pair(wait_ack, now);
+        send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
+        // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
+
+        pktlen += HEADER_LENGTH;
         return true;
     }
 
@@ -1361,18 +1376,20 @@ public:
 
     size_t send_data_acknowledge(uint8_t* src, size_t src_len){
         auto ty = Type::ACK;
-        auto start = receive_pktnum2offset.begin()->first;
-        auto end = std::prev(receive_pktnum2offset.end())->first;
-        uint64_t psize = start - end + 1;
+        auto start = current_loop_min;
+        auto end = current_loop_max;
+        uint64_t psize = end - start + 1;
         Header* hdr = new Header(ty, send_num, 0, 0, send_num, psize);
         memcpy(src, hdr, HEADER_LENGTH);
         memcpy(src + HEADER_LENGTH, &start, sizeof(Packet_num_len));
         memcpy(src + HEADER_LENGTH + sizeof(Packet_num_len), &end, sizeof(Packet_num_len));
-        memset(src + HEADER_LENGTH + 2 * sizeof(Packet_num_len), 0, psize);
+        // memset(src + HEADER_LENGTH + 2 * sizeof(Packet_num_len), 0, psize);
         for (auto pn = start; pn <= end; pn++){
+            auto off_ = HEADER_LENGTH + 2 * sizeof(Packet_num_len) + pn - start;
             if(receive_pktnum2offset.find(pn) == receive_pktnum2offset.end()){
-                auto off_ = HEADER_LENGTH + 2 * sizeof(Packet_num_len) + pn - start;
                 src[off_] = 1;
+            }else{
+                src[off_] = 0;
             }
         }
         psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);

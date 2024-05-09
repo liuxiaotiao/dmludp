@@ -87,9 +87,9 @@ int main() {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
 
-            int type = 0;
-            int pktnum = 0;
-            auto header = dmludp_header_info(buffer, 24, type, pktnum);
+            uint32_t off = 0;
+            uint64_t pktnum = 0;
+            auto header = dmludp_header_info(buffer, 24, off, pktnum);
             if(header != 2){
                 continue;
             }
@@ -130,11 +130,11 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == client_fd) {
                 if (events[n].events & EPOLLIN){
-                    struct mmsghdr msgs[100];
-                    struct iovec iovecs[100];
-                    uint8_t bufs[100][1500];
+                    struct mmsghdr msgs[500];
+                    struct iovec iovecs[500];
+                    uint8_t bufs[500][1500];
 
-                    for (int i = 0; i < 100; i++) {
+                    for (int i = 0; i < 500; i++) {
                         iovecs[i].iov_base = bufs[i];
                         iovecs[i].iov_len = sizeof(bufs[i]);
                         msgs[i].msg_hdr.msg_iov = &iovecs[i];
@@ -144,9 +144,12 @@ int main() {
                     }
 
                     bool is_application = false;
-
+                    int receive_number = 0;
                     while(true){
-                        auto retval = recvmmsg(client_fd, msgs, 100, 0, NULL);
+                        auto retval = recvmmsg(client_fd, msgs + receive_number, 500, 0, NULL);
+                        if (receive_number == 0){
+                            dmludp_update_receive_parameters(dmludp_connection);
+                        }
                         if (retval == -1){
                             if (errno == EAGAIN) {
                                 break;
@@ -159,8 +162,8 @@ int main() {
                             auto read = msgs[index].msg_len;
                             if (read > 0){
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
-                                int offset;
-                                int pkt_num;
+                                uint32_t offset;
+                                uint64_t pkt_num;
                                 auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 24, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
@@ -185,16 +188,18 @@ int main() {
                                     break;
                                 }
                                 else if (rv == 3){
+                                    is_application = true;
                                 // Application packet 
                                 }
                                 else if (rv == 5){
                                 }
                             }
                         }
+                        receive_number++;
                     }
                     if(is_application){
                         uint8_t ack[1500];
-                        auto result = dmludp_send_data_acknowledge(ack, sizeof(ack));
+                        auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
                         auto sent_result = ::send(client_fd, ack, result, 0);
                     }
                 }

@@ -89,6 +89,10 @@ inline std::shared_ptr<Connection> dmludp_connect(sockaddr_storage local, sockad
     return dmludp::Connection::connect(local, peer, config);
 }
 
+inline void dmludp_update_receive_parameters(td::shared_ptr<Connection> conn){
+    conn->update_receive_parameter();
+}
+
 // inline void dmludp_set_rtt(Connection* conn, long interval){
 inline void dmludp_set_rtt(std::shared_ptr<Connection> conn, long interval){
     conn->set_rtt(interval);
