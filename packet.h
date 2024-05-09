@@ -139,7 +139,7 @@ using Packet_len = uint16_t;
             memcpy(vec.data() + position, &input, sizeof(uint16_t));
         }
 
-        void put_u16(std::vector<uint8_t> &vec, uint64_t &input, size_t position){
+        void put_u16(std::vector<uint8_t> &vec, uint16_t &input, size_t position){
             memcpy(vec.data() + position, &input, sizeof(uint16_t));
         }
 

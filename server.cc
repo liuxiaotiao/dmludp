@@ -100,9 +100,9 @@ int main() {
             if (rv < 0){
                 continue;
             }
-            int type = 0;
+            uint32_t off = 0;
             int pktnum = 0;
-            auto header = dmludp_header_info(buffer, 26, type, pktnum);
+            auto header = dmludp_header_info(buffer, 24, off, pktnum);
             if(header != 2){
                 continue;
             }
@@ -117,9 +117,9 @@ int main() {
             if (rv < 0){
                 continue;
             }
-            int type = 0;
+            uint32_t off = 0;
             int pktnum = 0;
-            auto header = dmludp_header_info(buffer, 26, type, pktnum);
+            auto header = dmludp_header_info(buffer, 24, off, pktnum);
             if(header != 2){
                 continue;
             }
@@ -211,9 +211,9 @@ int main() {
                             auto read = msgs[index].msg_len;
                             if (read > 0){
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
-                                int offset;
+                                uint32_t offset;
                                 int pkt_num;
-                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 24, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
                                     uint8_t out[1500];
@@ -287,7 +287,7 @@ int main() {
                     size_t need_to_send = 0;
                     size_t before_error_sent = 0;
                     if (has_error == 0){
-                        wlen= dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_, out_ack);
+                        wlen= dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_);
                         if (messages.size() == 0){
                             continue;
                         }

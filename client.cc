@@ -89,7 +89,7 @@ int main() {
 
             int type = 0;
             int pktnum = 0;
-            auto header = dmludp_header_info(buffer, 26, type, pktnum);
+            auto header = dmludp_header_info(buffer, 24, type, pktnum);
             if(header != 2){
                 continue;
             }
@@ -161,7 +161,7 @@ int main() {
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                                 int offset;
                                 int pkt_num;
-                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 24, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
                                     // uint8_t out[1500];

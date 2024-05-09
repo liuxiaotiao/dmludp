@@ -390,7 +390,7 @@ public:
     start_receive_offset(0),
     first_application_pktnum(0),
     send_connection_difference(0),
-    receive_connection_difference(1),
+    receive_connection_difference(1)
     {};
 
     ~Connection(){
@@ -436,7 +436,7 @@ public:
         Packet_num_len pkt_num;
         Priority_len pkt_priorty;
         Offset_len pkt_offset;
-        Difference_len pkt_seq;
+        Acknowledge_sequence_len pkt_seq;
         Packet_len pkt_len;
         auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_len);
        
@@ -830,7 +830,7 @@ public:
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
                 ack_seq_vector.push_back(send_seq);
             }
-            Packet_len out_len = 0; 
+            Packet_num_len out_len = 0; 
             Offset_len out_off = 0;
             bool s_flag = false;
             auto pn = 0;
@@ -916,7 +916,6 @@ public:
             return false;
         }
 
-        auto index = 0;
         while(sent_num != record2ack_pktnum.size()){
             sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
 
@@ -932,8 +931,6 @@ public:
                 record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
             }
 
-            delete hdr; 
-            hdr = nullptr; 
             ack_set.insert(pn);
             keyToValues[pn].push_back(pn);
             valueToKeys[pn] = pn;

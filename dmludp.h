@@ -70,7 +70,7 @@ inline void dmludp_config_free(Config* config){
     delete config;
 }
 
-inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint64_t &off, uint64_t &pn) {
+inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
     auto result = reinterpret_cast<Header *>(data)->ty;
     pn = reinterpret_cast<Header *>(data)->pkt_num;
     // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
@@ -111,7 +111,7 @@ inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn,
     std::vector<std::shared_ptr<Header>> &hdrs, 
     std::vector<struct mmsghdr> &messages, 
     std::vector<struct iovec> &iovecs){
-    return conn->send_mmsg(hdrs, messages, iovecs, out_ack);
+    return conn->send_mmsg(hdrs, messages, iovecs);
 }
 
 // inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
