@@ -375,10 +375,10 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
     
         };
 
-        bool emit(struct iovec & out, size_t& out_len, uint64_t& out_off){
+        bool emit(struct iovec & out, size_t& out_len, uint32_t& out_off){
             bool stop = false;
             out_len = 0;
-            out_off = off_front();
+            out_off = (uint32_t)off_front();
             while (ready()){
                 if(pos >= data.size()){
                     break;
@@ -439,7 +439,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 pos = 0;
             }
             
-            out_off += out_len;
+            out_off += (uint32_t)out_len;
             return stop;
         };
 
