@@ -287,7 +287,7 @@ int main() {
                     size_t need_to_send = 0;
                     size_t before_error_sent = 0;
                     if (has_error == 0){
-                        wlen= dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_);
+                        wlen= dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_, out_ack);
                         if (messages.size() == 0){
                             continue;
                         }

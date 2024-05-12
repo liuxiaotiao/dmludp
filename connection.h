@@ -406,7 +406,7 @@ public:
     current_loop_min(0),
     current_loop_max(0),
     send_connection_difference(0),
-    receive_connection_difference(1),
+    receive_connection_difference(1)
     {};
 
     ~Connection(){
@@ -573,36 +573,36 @@ public:
         }
 
         auto received_ack = pkt_num;
-
-        if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
-            auto initial_ack = valueToKeys.find(received_ack);
-            
-            auto check_ack = retransmission_ack.find(received_ack);
-            if(check_ack != retransmission_ack.end()){
-                handshake = retransmission_ack.at(pkt_num).second;
+        
+        auto initial_ack = valueToKeys.find(received_ack);
+        
+        auto check_ack = retransmission_ack.find(received_ack);
+        if(check_ack != retransmission_ack.end()){
+            handshake = retransmission_ack.at(pkt_num).second;
+        }else{
+            auto timeout_check = timeout_ack.find(received_ack);
+            if(timeout_check != timeout_ack.end()){
+                handshake = timeout_ack.at(pkt_num).second;
             }else{
-                auto timeout_check = timeout_ack.find(received_ack);
-                if(timeout_check != timeout_ack.end()){
-                    handshake = timeout_ack.at(pkt_num).second;
-                }else{
-                    return;
-                }
+                return;
             }
-            update_rtt();
+        }
+        update_rtt();
 
-            auto last_index = keyToValues[valueToKeys[received_ack]].back();
-            uint64_t start_pn = send_pkt_duration[last_index].first;
-            uint64_t end_pn = send_pkt_duration[last_index].second;
-            
-            uint64_t ini = 0;
-            // std::cout<<"retransmission_ack"<<std::endl;
-            // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
-            // std::cout<<"send_pkt_duration"<<std::endl;
-            // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
+        auto last_index = keyToValues[valueToKeys[received_ack]].back();
+        uint64_t start_pn = send_pkt_duration[last_index].first;
+        uint64_t end_pn = send_pkt_duration[last_index].second;
+        
+        uint64_t ini = 0;
+        // std::cout<<"retransmission_ack"<<std::endl;
+        // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
+        //     std::cout << "Key: " << it->first << std::endl;
+        // }
+        // std::cout<<"send_pkt_duration"<<std::endl;
+        // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
+        //     std::cout << "Key: " << it->first << std::endl;
+        // }
+        if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
             if (initial_ack != valueToKeys.end()){
                 ini = valueToKeys[received_ack];
                 ack_set.erase(ini);
