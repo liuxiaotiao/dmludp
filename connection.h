@@ -20,7 +20,7 @@
 namespace dmludp {
 
 
-const size_t HEADER_LENGTH = 24;
+const size_t HEADER_LENGTH = 26;
 
 // const size_t MAX_ACK_NUM = 160;
 
@@ -37,6 +37,8 @@ const double alpha = 0.875;
 
 const double beta = 0.25;
 
+const uint64_t MIN_ACK_RANGE_DIFFERENCE = 10;
+
 using Type_len = uint8_t;
 
 using Packet_num_len = uint64_t;
@@ -46,6 +48,10 @@ using Priority_len = uint8_t;
 using Offset_len = uint32_t;
 
 using Acknowledge_sequence_len = uint64_t;
+
+using Difference_len = uint8_t;
+
+using Acknowledge_time_len = uint8_t;
 
 using Packet_len = uint16_t;
 
@@ -320,7 +326,7 @@ public:
     std::unordered_map<uint64_t, std::pair<std::vector<uint8_t>, std::chrono::high_resolution_clock::time_point>> retransmission_ack;
 
     // Record first application packet number in each cwnd
-    uint64_t first_application_pktnum;
+    uint64_t last_application_pktnum;
 
     // sender record the map relationship between acknowledege packet number and (start application packet number and end application packet number)
     std::map<uint64_t, std::pair<uint64_t, uint64_t>> send_pkt_duration;
@@ -346,7 +352,14 @@ public:
 
     size_t current_loop_min;
 
-    size_t current_loop_min;
+    size_t current_loop_max;
+
+    std::pair<uint64_t, uint64_t> receive_range;
+
+    // To difference data flow to complete partial transportaion.
+    uint8_t send_connection_difference;
+
+    uint8_t receive_connection_difference;
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -392,11 +405,13 @@ public:
     rx_length(0),
     dmludp_error_sent(0),
     start_receive_offset(0),
-    first_application_pktnum(0),
+    last_application_pktnum(0),
     send_connection_difference(0),
     receive_connection_difference(1),
     current_loop_min(0),
-    current_loop_max(0)
+    current_loop_max(0),
+    send_connection_difference(0),
+    receive_connection_difference(1),
     {};
 
     ~Connection(){
@@ -426,12 +441,16 @@ public:
         }
     };
 
-    Type header_info(uint8_t* src, size_t src_len, Packet_num_len &pkt_num, Priority_len &pkt_priorty, Offset_len &pkt_offset, Acknowledge_sequence_len &pkt_seq, Packet_len &pkt_len){
+    Type header_info(uint8_t* src, size_t src_len, Packet_num_len &pkt_num, Priority_len &pkt_priorty, 
+        Offset_len &pkt_offset, Acknowledge_sequence_len &pkt_seq, Acknowledge_time_len &pkt_ack_time
+        Difference_len &pkt_difference, Packet_len &pkt_len){
         auto pkt_ty = reinterpret_cast<Header *>(src)->ty;
         pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
         pkt_priorty = reinterpret_cast<Header *>(src)->priority;
         pkt_offset = reinterpret_cast<Header *>(src)->offset;
         pkt_seq = reinterpret_cast<Header *>(src)->seq;
+        pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
+        pkt_difference = reinterpret_cast<Header *>(src)->difference;
         pkt_len = reinterpret_cast<Header *>(src)->pkt_length;
         return pkt_ty;
     }
@@ -443,8 +462,11 @@ public:
         Priority_len pkt_priorty;
         Offset_len pkt_offset;
         Acknowledge_sequence_len pkt_seq;
+        Acknowledge_time_len pkt_ack_time;
+        Difference_len pkt_difference;
         Packet_len pkt_len;
-        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_len);
+        
+        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_ack_time, pkt_difference, pkt_len);
        
         size_t read_ = 0;
 
@@ -542,11 +564,13 @@ public:
         Priority_len pkt_priorty;
         Offset_len pkt_offset;
         Acknowledge_sequence_len pkt_seq;
+        Acknowledge_time_len pkt_ack_time;
+        Difference_len pkt_difference;
         Packet_len pkt_len;
-        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_len);
+        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_ack_time, pkt_difference, pkt_len);
 
-        auto first_pkt = *(uint64_t *)(src + sizeof(uint64_t));
-        auto end_pkt = *(uint64_t *)(src + 2 * sizeof(uint64_t));
+        auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
+        auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
 
         if (ack_set.empty()){
             stop_ack = true;
@@ -555,49 +579,51 @@ public:
 
         auto received_ack = pkt_num;
 
-        auto initial_ack = valueToKeys.find(received_ack);
-        
-        auto check_ack = retransmission_ack.find(received_ack);
-        if(check_ack != retransmission_ack.end()){
-            handshake = retransmission_ack.at(pkt_num).second;
-        }else{
-            auto timeout_check = timeout_ack.find(received_ack);
-            if(timeout_check != timeout_ack.end()){
-                handshake = timeout_ack.at(pkt_num).second;
+        if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
+            auto initial_ack = valueToKeys.find(received_ack);
+            
+            auto check_ack = retransmission_ack.find(received_ack);
+            if(check_ack != retransmission_ack.end()){
+                handshake = retransmission_ack.at(pkt_num).second;
+            }else{
+                auto timeout_check = timeout_ack.find(received_ack);
+                if(timeout_check != timeout_ack.end()){
+                    handshake = timeout_ack.at(pkt_num).second;
+                }else{
+                    return;
+                }
+            }
+            update_rtt();
+
+            auto last_index = keyToValues[valueToKeys[received_ack]].back();
+            uint64_t start_pn = send_pkt_duration[last_index].first;
+            uint64_t end_pn = send_pkt_duration[last_index].second;
+            
+            uint64_t ini = 0;
+            // std::cout<<"retransmission_ack"<<std::endl;
+            // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
+            //     std::cout << "Key: " << it->first << std::endl;
+            // }
+            // std::cout<<"send_pkt_duration"<<std::endl;
+            // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
+            //     std::cout << "Key: " << it->first << std::endl;
+            // }
+            if (initial_ack != valueToKeys.end()){
+                ini = valueToKeys[received_ack];
+                ack_set.erase(ini);
+                for (int key : keyToValues[ini]) {
+                    retransmission_ack.erase(key);
+                    send_pkt_duration.erase(key);
+                    valueToKeys.erase(key);
+                    timeout_ack.erase(key);
+                }
             }else{
                 return;
             }
+            keyToValues.erase(ini);
         }
-        update_rtt();
-
-        auto last_index = keyToValues[valueToKeys[received_ack]].back();
-        uint64_t start_pn = send_pkt_duration[last_index].first;
-        uint64_t end_pn = send_pkt_duration[last_index].second;
         
-        uint64_t ini = 0;
-        // std::cout<<"retransmission_ack"<<std::endl;
-        // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
-        //     std::cout << "Key: " << it->first << std::endl;
-        // }
-        // std::cout<<"send_pkt_duration"<<std::endl;
-        // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
-        //     std::cout << "Key: " << it->first << std::endl;
-        // }
-        if (initial_ack != valueToKeys.end()){
-            ini = valueToKeys[received_ack];
-            ack_set.erase(ini);
-            for (int key : keyToValues[ini]) {
-                retransmission_ack.erase(key);
-                send_pkt_duration.erase(key);
-                valueToKeys.erase(key);
-                timeout_ack.erase(key);
-            }
-        }else{
-            return;
-        }
-        keyToValues.erase(ini);
-        
-        auto result = send_pkt_duration.erase(received_ack);
+        // auto result = send_pkt_duration.erase(received_ack);
 
         // std::vector<uint8_t> unackbuf(buf.begin() + 26, buf.begin() + 26 + hd->pkt_length);
 
@@ -649,13 +675,15 @@ public:
                 high_priority += 1;
             }
             
-            if ((real_index + 1) % 8 == 0 || check_pn == end_pn){
-                double pnum = (real_index + 1) % 8;
-                if (pnum == 0){
-                    pnum = 8;
+            if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
+                if ((real_index + 1) % 8 == 0 || check_pn == end_pn){
+                    double pnum = (real_index + 1) % 8;
+                    if (pnum == 0){
+                        pnum = 8;
+                    }
+                    recovery.update_win(weights, pnum);
+                    weights = 0;
                 }
-                recovery.update_win(weights, pnum);
-                weights = 0;
             }
 
             real_index++;
@@ -750,7 +778,7 @@ public:
             completed = false;
             return completed;
         }
-
+        send_connection_difference++;
         for (auto i = 0 ; i < iovecs_len; i++){
             data_buffer.emplace_back(reinterpret_cast<uint8_t*>(iovecs[i].iov_base), iovecs[i].iov_len);
             written_data_once += iovecs[i].iov_len;
@@ -788,7 +816,8 @@ public:
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
         std::vector<struct mmsghdr> &messages, 
-        std::vector<struct iovec> &iovecs)
+        std::vector<struct iovec> &iovecs,
+        std::vector<std::vector<uint8_t>> &out_ack)
     {
         auto sbuf = data_buffer.at(current_buffer_pos);
         
@@ -862,11 +891,9 @@ public:
             priority = priority_calculation(out_off);
             Type ty = Type::Application;
 
-            if (i == 0){
-                first_application_pktnum = pn;
-            }
+            last_application_pktnum = pn;
     
-            std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, out_len);
+            std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, 0, send_connection_difference, out_len);
             hdrs.push_back(hdr);
             iovecs[2*i].iov_base = (void *)hdr.get();
             iovecs[2*i].iov_len = HEADER_LENGTH;
@@ -899,13 +926,34 @@ public:
             }
 
         }
-        auto ack_index = 0;
+        // auto ack_index = 0;
+        // while (true){
+        //     auto result = generate_elicit_ack_message(ack_seq_vector, ack_index);
+        //     if (result == false){
+        //         break;
+        //     }
+        //     ack_index++;
+        // }
+
+        auto index = 0;
+        out_ack.resize((record2ack_pktnum.size() / MAX_ACK_NUM_PKTNUM) + 1);
+        auto ioves_size = iovecs.size();
+        auto message_size = messages.size();
+        iovecs.resize(ioves_size + out_ack.size());
+        messages.resize(message_size + out_ack.size());
         while (true){
-            auto result = generate_elicit_ack_message(ack_seq_vector, ack_index);
-            if (result == false){
+            auto result = send_elicit_ack_message_pktnum_new(out_ack[index], send_seq);
+            if (result == -1){
                 break;
             }
-            ack_index++;
+            iovecs[ioves_size].iov_base = out_ack[index].data();
+            iovecs[ioves_size].iov_len = out_ack[index].size();
+
+            messages[message_size].msg_hdr.msg_iov = &iovecs[ioves_size];
+            messages[message_size].msg_hdr.msg_iovlen = 1;
+            ioves_size++;
+            message_size++;
+            index++;
         }
 
 
@@ -917,6 +965,51 @@ public:
 
   	    return written_len;
     };
+
+    ssize_t send_elicit_ack_message_pktnum(std::vector<uint8_t> &out, uint64_t elicit_acknowledege_packet_number){
+        auto ty = Type::ElicitAck;        
+        auto preparenum = record2ack_pktnum.size();
+        if(record2ack_pktnum.empty()){
+            return -1;
+        }
+
+        size_t pktlen = 0;
+
+        uint64_t start_pktnum = record2ack_pktnum[0];
+        
+        size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
+
+        uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
+
+        auto pn = elicit_acknowledege_packet_number;
+        Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
+        // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
+        out.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
+
+        hdr->to_bytes(out);
+        memcpy(out.data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
+        memcpy(out.data() + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
+        if(sent_num == record2ack_pktnum.size()){
+            record2ack_pktnum.clear();
+        }else{
+            record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
+        }
+
+        delete hdr; 
+        hdr = nullptr; 
+        ack_set.insert(pn);
+        keyToValues[pn].push_back(pn);
+        valueToKeys[pn] = pn;
+        ack_point += sent_num;
+        std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        retransmission_ack[pn] = std::make_pair(wait_ack, now);
+        send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
+        // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
+
+        pktlen += HEADER_LENGTH;
+        return pktlen;
+    }
 
     size_t get_error_sent(){
         return dmludp_error_sent;
@@ -952,7 +1045,7 @@ public:
         ack_point += sent_num;
         std::vector<uint8_t> wait_ack(2 * sizeof(uint64_t));
         memcpy(wait_ack.data(), &start_pktnum, sizeof(uint64_t));
-        memcpy(wait_ack.data() + sizeof(uint64_t), &start_pktnum, sizeof(uint64_t));
+        memcpy(wait_ack.data() + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         retransmission_ack[pn] = std::make_pair(wait_ack, now);
         send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
@@ -1206,7 +1299,7 @@ public:
         uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
 
         auto pn = pkt_num_spaces.at(1).updatepktnum();
-        Header* hdr = new Header(ty, pn, 0, 0, send_connection_difference, pktlen);
+        Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
         // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
         out.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
@@ -1266,7 +1359,7 @@ public:
             // std::cout<<"[Elicit] Elicit acknowledge packet(time out) num:"<<pktnum<<std::endl;
             // auto ty = Type::ElicitAck;
             size_t pktlen = retransmission_ack.at(n).first.size();
-            Header* hdr = new Header(ty, pktnum, 0, 0, send_connection_difference, pktlen);
+            Header* hdr = new Header(ty, pktnum, 0, 0, pktnum, 0, send_connection_difference, pktlen);
             pktlen += HEADER_LENGTH;
             out_buffer.resize(pktlen);
 
@@ -1353,9 +1446,11 @@ public:
         if (ty == Type::ACK){
             feed_back = false;
             psize = (uint64_t)(receive_result.size());
-            Header* hdr = new Header(ty, send_num, 0, 0, send_num, psize);
+            Header* hdr = new Header(ty, send_num, 0, 0, send_num, 1, send_connection_difference, psize);
             memcpy(out, hdr, HEADER_LENGTH);
-            memcpy(out + HEADER_LENGTH, receive_result.data(), receive_result.size());
+            memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
+            memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
+            memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data(), receive_result.size());
             receive_result.clear();
             delete hdr; 
             hdr = nullptr; 
@@ -1379,7 +1474,7 @@ public:
         auto start = current_loop_min;
         auto end = current_loop_max;
         uint64_t psize = end - start + 1;
-        Header* hdr = new Header(ty, send_num, 0, 0, send_num, psize);
+        Header* hdr = new Header(ty, send_num, 0, 0, send_num, 0, receive_connection_difference, psize);
         memcpy(src, hdr, HEADER_LENGTH);
         memcpy(src + HEADER_LENGTH, &start, sizeof(Packet_num_len));
         memcpy(src + HEADER_LENGTH + sizeof(Packet_num_len), &end, sizeof(Packet_num_len));
@@ -1407,7 +1502,7 @@ public:
 
         auto ty = Type::Stop; 
 
-        Header* hdr = new Header(ty, pn, offset, priority, 0, psize);
+        Header* hdr = new Header(ty, pn, offset, priority, 0, 0, send_connection_difference, psize);
 
         memcpy(out, hdr, HEADER_LENGTH);
         delete hdr; 
@@ -1493,7 +1588,7 @@ public:
         uint64_t end = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH + sizeof(uint64_t));
         // Used to debug.
         // std::map<uint64_t, uint8_t> ack_record;
-
+        receive_range = std::make_pair(start, end);
         for (auto pn = start; pn <= end; pn++){
             if (receive_pktnum2offset.find(pn) != receive_pktnum2offset.end()){
                 receive_result.push_back(0);
@@ -1527,11 +1622,6 @@ public:
     bool is_closed() {
         return closed;
     };
-
-    /// Returns true if the connection was closed due to the idle timeout.
-    // bool is_timed_out() {
-    //     return timed_out;
-    // };
     
     Type write_pkt_type(){
         // let now = Instant::now();
@@ -1590,7 +1680,7 @@ public:
     
 };
 
-const uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const uint8_t Connection::handshake_header[] = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-const uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const uint8_t Connection::fin_header[] = {7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 }

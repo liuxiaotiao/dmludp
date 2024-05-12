@@ -89,7 +89,7 @@ inline std::shared_ptr<Connection> dmludp_connect(sockaddr_storage local, sockad
     return dmludp::Connection::connect(local, peer, config);
 }
 
-inline void dmludp_update_receive_parameters(td::shared_ptr<Connection> conn){
+inline void dmludp_update_receive_parameters(std::shared_ptr<Connection> conn){
     conn->update_receive_parameter();
 }
 
@@ -114,7 +114,8 @@ inline size_t dmludp_get_error_sent(std::shared_ptr<Connection> conn){
 inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn, 
     std::vector<std::shared_ptr<Header>> &hdrs, 
     std::vector<struct mmsghdr> &messages, 
-    std::vector<struct iovec> &iovecs){
+    std::vector<struct iovec> &iovecs,
+    std::vector<std::vector<uint8_t>> &out_ack){
     return conn->send_mmsg(hdrs, messages, iovecs);
 }
 

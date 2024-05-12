@@ -19,9 +19,11 @@ using Priority_len = uint8_t;
 
 using Offset_len = uint32_t;
 
-// using Difference_len = uint8_t;
-
 using Acknowledge_sequence_len = uint64_t;
+
+using Acknowledge_time_len = uint8_t;
+
+using Difference_len = uint8_t;
 
 using Packet_len = uint16_t;
 
@@ -60,16 +62,25 @@ using Packet_len = uint16_t;
         /// The type of the packet.
         Type ty;
 
+        // Unique for each packet
         Packet_num_len pkt_num;
 
+        // Used to assign retransmission time and other function.
         Priority_len priority;
 
+        // Current packet offset in data flow.
         Offset_len offset;
 
-        // uint8_t difference;
-
+        // Corresponding to acknowledge packet number. 
         Acknowledge_sequence_len seq;
+        
+        // To indentify acknowledge packet is partial or all data.
+        Acknowledge_time_len ack_time;
 
+        // To differentiate data flow.
+        Difference_len difference;
+
+        // The data length of the application packet
         Packet_len pkt_length;
 
 
@@ -79,12 +90,16 @@ using Packet_len = uint16_t;
             Priority_len priority, 
             Offset_len off,
             Acknowledge_sequence_len seq,
+            Acknowledge_time_len ack_time,
+            Difference_len difference,
             Packet_len len) 
             : ty(first), 
             pkt_num(pktnum), 
             priority(priority), 
             offset(off), 
             seq(seq),
+            ack_time(ack_time)
+            difference(difference),
             pkt_length(len) {};
 
         ~Header() {};
@@ -112,22 +127,28 @@ using Packet_len = uint16_t;
             }else{
                 first = 0x09;
             }
-            put_u8(out, first, off);
+            put_u8(out, first, off); // Type
             
             off += sizeof(uint8_t);
-            put_u64(out, pkt_num, off);
+            put_u64(out, pkt_num, off); // packet number
 
             off += sizeof(Packet_num_len);
-            put_u8(out, priority, off);
+            put_u8(out, priority, off); // priority
 
             off += sizeof(Priority_len);
-            put_u32(out, offset, off);
+            put_u32(out, offset, off); // packet offset
 
             off += sizeof(Offset_len);
-            put_u64(out, seq, off);
-            
+            put_u64(out, seq, off); // acknowledge sequence
+
             off += sizeof(Acknowledge_sequence_len);
-            put_u16(out, pkt_length, off);
+            put_u8(out, seq, off); // acknowledge time for one sequcence number.
+            
+            off += sizeof(Acknowledge_time_len);
+            put_u8(out, difference, off); // flow difference
+
+            off += sizeof(Difference_len);
+            put_u16(out, pkt_length, off); // packet length
 
         };
 
@@ -148,7 +169,7 @@ using Packet_len = uint16_t;
         };
 
         size_t len(){
-            return 26;
+            return sizeof(Type) + sizeof(Packet_num_len) + sizeof(Priority_len) + sizeof(Offset_len) + sizeof(Acknowledge_sequence_len) + sizeof(Difference_len) + sizeof(pkt_length) + sizeof(Acknowledge_time_len);
         };
     };
 

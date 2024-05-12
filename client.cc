@@ -144,7 +144,10 @@ int main() {
                     }
 
                     bool is_application = false;
+                    bool has_elicit_packet = false;
                     int receive_number = 0;
+                    size_t elicit_index = 0;
+                    size_t elicit_len = 0;
                     while(true){
                         auto retval = recvmmsg(client_fd, msgs + receive_number, 500, 0, NULL);
                         if (receive_number == 0){
@@ -158,26 +161,17 @@ int main() {
                                 continue;
                             }
                         }
-                        for (auto index = 0; index < retval; index++){
+                        for (auto index = receive_number; index < retval + receive_number; index++){
                             auto read = msgs[index].msg_len;
                             if (read > 0){
-                                auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                                 uint32_t offset;
                                 uint64_t pkt_num;
-                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 24, offset, pkt_num);
+                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
                                     // uint8_t out[1500];
-                                    ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
-                                    ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
-                                    if(dmludp_conn_receive_complete(dmludp_connection)){
-                                        std::cout<<recv_time++<<" time receive complete"<<std::endl;
-                                        dmludp_conn_recv_reset(dmludp_connection);
-                                        if (recv_time == 100){
-                                            return 0;
-                                        }
-                                        
-                                    }
+                                    has_elicit_packet = true;
+                                    
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.
@@ -188,6 +182,7 @@ int main() {
                                     break;
                                 }
                                 else if (rv == 3){
+                                    auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                                     is_application = true;
                                 // Application packet 
                                 }
@@ -197,11 +192,25 @@ int main() {
                         }
                         receive_number++;
                     }
-                    if(is_application){
-                        uint8_t ack[1500];
-                        auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                        auto sent_result = ::send(client_fd, ack, result, 0);
+                    if(has_elicit_packet){
+                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[ack_index].msg_hdr.msg_iov->iov_base), msgs[ack_index].msg_len);
+                        ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                        ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                        if(dmludp_conn_receive_complete(dmludp_connection)){
+                            std::cout<<recv_time++<<" time receive complete"<<std::endl;
+                            dmludp_conn_recv_reset(dmludp_connection);
+                            if (recv_time == 100){
+                                return 0;
+                            }
+                        }
+                    }else{
+                        if(is_application){
+                            uint8_t ack[1500];
+                            auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                            auto sent_result = ::send(client_fd, ack, result, 0);
+                        }
                     }
+                    
                 }
                 
                 
