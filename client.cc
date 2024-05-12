@@ -171,7 +171,7 @@ int main() {
                                 if(rv == 4){
                                     // uint8_t out[1500];
                                     has_elicit_packet = true;
-                                    
+                                    elicit_index = index;
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.
@@ -193,7 +193,7 @@ int main() {
                         receive_number++;
                     }
                     if(has_elicit_packet){
-                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[ack_index].msg_hdr.msg_iov->iov_base), msgs[ack_index].msg_len);
+                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_len);
                         ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                         ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
                         if(dmludp_conn_receive_complete(dmludp_connection)){
