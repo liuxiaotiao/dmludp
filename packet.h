@@ -98,7 +98,7 @@ using Packet_len = uint16_t;
             priority(priority), 
             offset(off), 
             seq(seq),
-            ack_time(ack_time)
+            ack_time(ack_time),
             difference(difference),
             pkt_length(len) {};
 

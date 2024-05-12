@@ -356,11 +356,6 @@ public:
 
     std::pair<uint64_t, uint64_t> receive_range;
 
-    // To difference data flow to complete partial transportaion.
-    uint8_t send_connection_difference;
-
-    uint8_t receive_connection_difference;
-
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
     sent_count(0),
@@ -442,7 +437,7 @@ public:
     };
 
     Type header_info(uint8_t* src, size_t src_len, Packet_num_len &pkt_num, Priority_len &pkt_priorty, 
-        Offset_len &pkt_offset, Acknowledge_sequence_len &pkt_seq, Acknowledge_time_len &pkt_ack_time
+        Offset_len &pkt_offset, Acknowledge_sequence_len &pkt_seq, Acknowledge_time_len &pkt_ack_time,
         Difference_len &pkt_difference, Packet_len &pkt_len){
         auto pkt_ty = reinterpret_cast<Header *>(src)->ty;
         pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
