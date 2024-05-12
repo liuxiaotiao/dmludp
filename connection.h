@@ -404,9 +404,7 @@ public:
     send_connection_difference(0),
     receive_connection_difference(1),
     current_loop_min(0),
-    current_loop_max(0),
-    send_connection_difference(0),
-    receive_connection_difference(1)
+    current_loop_max(0)
     {};
 
     ~Connection(){
@@ -961,7 +959,7 @@ public:
   	    return written_len;
     };
 
-    ssize_t send_elicit_ack_message_pktnum(std::vector<uint8_t> &out, uint64_t elicit_acknowledege_packet_number){
+    ssize_t send_elicit_ack_message_pktnum_new(std::vector<uint8_t> &out, uint64_t elicit_acknowledege_packet_number){
         auto ty = Type::ElicitAck;        
         auto preparenum = record2ack_pktnum.size();
         if(record2ack_pktnum.empty()){
