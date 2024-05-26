@@ -502,7 +502,7 @@ public:
         }
 
         if (pkt_ty == Type::Application){
-            std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
+            // std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
             if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
@@ -548,6 +548,53 @@ public:
 
         return read_;
     };
+
+
+    void pre_process_application_packet(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn){
+        auto result = reinterpret_cast<Header *>(data)->ty;
+        pn = reinterpret_cast<Header *>(data)->pkt_num;
+        // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
+        off = reinterpret_cast<Header *>(data)->offset;
+        // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
+
+        if (result == Type::Application){
+            if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
+                std::cout<<"[Error] Duplicate application packet"<<std::endl;
+                _Exit(0);
+            }
+                
+            // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
+            if (pkt_offset == 0){
+                clear_recv_setting();
+            }
+            if (pkt_num > current_loop_max){
+                current_loop_max = pkt_num;
+            }
+
+            if (pkt_num < current_loop_min){
+                current_loop_min = pkt_num;
+            }
+            send_num = pkt_seq;
+
+            // Debug
+            if (recv_dic.find(pkt_offset) != recv_dic.end()){
+                // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
+                // RRD.show();
+                // _Exit(0);
+                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                // Debug
+                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+            }else{
+                recv_count += 1;
+                // optimize to reduce copy time.
+                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                // Debug
+                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+            }
+        }
+        
+        return result;
+    }
 
     bool send_ack(){
         return feed_back;
@@ -642,24 +689,6 @@ public:
     void reset_rx_len(){
         rx_length = 0;
     }
-
-    // nwrite() is used to write data to congestion control window
-    // return represents if current_buffer_pos should add 1.
-    ssize_t nwrite(sbuffer &send_data, size_t congestion_window) {
-        // TO DO: delay last unsent to reduce same offset retransmission.
-        if (send_buffer.data.empty()){
-            size_t off_len = 0;
-            auto toffset = send_data.sent() % MAX_SEND_UDP_PAYLOAD_SIZE;
-            off_len = (size_t)MAX_SEND_UDP_PAYLOAD_SIZE - toffset;
-            auto result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, congestion_window, off_len);
-            return result;
-        }else{
-            size_t off_len = 0;
-            auto result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, congestion_window, off_len);
-            return result;
-        }
-
-    };
     
     // Used to get pointer owner and length
     // get_data() is used after get(op) in gloo.
@@ -730,7 +759,6 @@ public:
         ssize_t result = 0;
         size_t out_len = 0;
         if (send_buffer.is_empty()){
-            // This is first time using data flow to fill send buffer.
             result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, congestion_window, out_len);
         }else{
             if (send_data.left == 0){
@@ -763,14 +791,20 @@ public:
         */
         if (on_timeout()){
             if (can_send){
+                congestion_window = recovery.cwnd();
                 return 4;
             }else{
+                recovery.set_recovery();
                 can_send = true;
+                congestion_window = recovery.cwnd();
+                send_buffer.update_max_data(congestion_window);
                 return 5;
             }
         }else{
             if (can_send){
                 //TODO: set cwnd to send buffer
+                congestion_window = recovery.cwnd();
+                send_buffer.update_max_data(congestion_window);
                 return 1;
             }else{
                 if (partial_send){
@@ -782,6 +816,8 @@ public:
             }
         }
     }
+
+ 
 
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,

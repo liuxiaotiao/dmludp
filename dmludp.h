@@ -71,12 +71,7 @@ inline void dmludp_config_free(Config* config){
 }
 
 inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
-    auto result = reinterpret_cast<Header *>(data)->ty;
-    pn = reinterpret_cast<Header *>(data)->pkt_num;
-    // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
-    off = reinterpret_cast<Header *>(data)->offset;
-    // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
-    return result;
+    return pre_process_application_packet(data, buf_len, off, pn);
 }
 
 // inline Connection* dmludp_accept(sockaddr_storage local, sockaddr_storage peer, Config config) {
@@ -98,11 +93,6 @@ inline void dmludp_set_rtt(std::shared_ptr<Connection> conn, long interval){
     conn->set_rtt(interval);
 }
 
-// Date: 7th Jan 2024
-// inline size_t dmludp_data_write(std::shared_ptr<Connection> conn, uint8_t* buf, size_t len){
-//     return conn->data_write(buf, len);
-// }
-
 inline bool dmludp_get_data(std::shared_ptr<Connection> conn, struct iovec *iovecs, int iovecs_len){
     return conn->get_data(iovecs, iovecs_len);
 }
@@ -119,13 +109,6 @@ inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn,
     return conn->send_mmsg(hdrs, messages, iovecs, out_ack);
 }
 
-// inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
-//     std::vector<uint8_t> &padding, 
-//     std::vector<struct msghdr> &messages, 
-//     std::vector<struct iovec> &iovecs){
-//     return conn->send_msg(padding, messages, iovecs);
-// }
-
 inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
     return conn->transmission_complete();
 }
@@ -134,15 +117,6 @@ inline ssize_t dmludp_send_timeout_elicit_ack_message(std::shared_ptr<Connection
     size_t written = conn->send_timeout_elicit_ack_message(out, timestamps);
     return written; 
 }
-
-// inline ssize_t dmludp_send_elicit_ack_message(std::shared_ptr<Connection> conn, std::vector<uint8_t> &out){
-//     std::vector<uint8_t> out_vector(1500);
-//     // ssize_t written = conn->send_elicit_ack_message(out_vector);
-//     ssize_t written = conn->send_elicit_ack_message_pktnum(out_vector);
-//     if (written > 0)
-//         out = std::move(out_vector);
-//     return written;
-// }
 
 inline ssize_t dmludp_send_data_acknowledge(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
     return conn->send_data_acknowledge(out, out_len);
@@ -153,27 +127,13 @@ inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
     return conn->enable_adding();
 }
 
-// inline bool dmludp_conn_is_empty(Connection* conn){
-// inline bool dmludp_conn_is_empty(std::shared_ptr<Connection> conn){
-//     return conn->data_is_empty();
-// }
-
 inline bool dmludp_conn_recovery(std::shared_ptr<Connection> conn){
     conn->recovery_send_buffer();
 }
 
-// inline bool dmludp_conn_data_empty(std::shared_ptr<Connection> conn){
-//     return conn->data_empty();
-// };
-
-// inline long dmludp_get_rtt(Connection* conn){
 inline long dmludp_get_rtt(std::shared_ptr<Connection> conn){
     return conn->get_rtt();
 }
-
-// inline long dmludp_is_empty(std::shared_ptr<Connection> conn){
-//     return conn->empty();
-// }
 
 // inline ssize_t dmludp_send_data_stop(Connection* conn, uint8_t* out, size_t out_len){
 inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
@@ -184,11 +144,6 @@ inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* 
     size_t written = conn->send_data_stop(out);
     return static_cast<ssize_t>(written);
 }
-
-// inline bool dmludp_buffer_is_empty(Connection* conn){
-// inline bool dmludp_buffer_is_empty(std::shared_ptr<Connection> conn){
-//     return conn->is_empty();
-// }
 
 // inline bool dmludp_conn_is_stop(Connection* conn){
 inline bool dmludp_conn_is_stop(std::shared_ptr<Connection> conn){
@@ -323,4 +278,8 @@ inline void dmludp_conn_rx_len(std::shared_ptr<Connection> conn, size_t expected
 
 inline void dmludp_conn_reset_rx_len(std::shared_ptr<Connection> conn){
     conn->reset_rx_len();
+}
+
+inline ssize_t dmludp_conn_check_status(std::shared_ptr<Connection> conn){
+    return conn->check_status();
 }

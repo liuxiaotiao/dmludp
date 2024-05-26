@@ -9,5 +9,3 @@ difference(1 byte)
 pkt_length(2 bytes)
 
 Elicit packet will be just used to timeout
-
-Implement Cubic
