@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include "dmludp.h"
-#include "connection.h"
+#include "connection2.h"
 #include "RangeBuf.h"
-#include "Recovery.h"
+#include "Recovery2.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include <iostream>
@@ -187,16 +187,6 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == server_fd) {
                 if (events[n].events & EPOLLIN){
-                /*      std::vector<std::vector<uint8_t>> out;
-                    std::set<std::chrono::high_resolution_clock::time_point> timestamps;
-                    auto result = dmludp_send_timeout_elicit_ack_message(dmludp_connection, out, timestamps);
-                    auto now = std::chrono::high_resolution_clock::now();
-                    if (result > 0){
-                        for(auto e : out){
-                        auto sent = ::send(server_fd, e.data(), e.size(), 0);
-                        }
-                    }*/
-
                     while(true){
                         auto retval = recvmmsg(server_fd, msgs, 100, 0, NULL);
                         if (retval == -1){
@@ -261,13 +251,7 @@ int main() {
                 if (events[n].events & EPOLLOUT){
                     std::vector<std::vector<uint8_t>> out;
                     std::set<std::chrono::high_resolution_clock::time_point> timestamps;
-                    auto result = dmludp_send_timeout_elicit_ack_message(dmludp_connection, out, timestamps);
-                    auto now = std::chrono::high_resolution_clock::now();
-                    if (result > 0){
-                        for(auto e : out){
-                            auto sent = ::send(server_fd, e.data(), e.size(), 0);
-                        }
-                    }
+                    auto result = dmludp_conn_check_status(dmludp_connection);
                     if (dmludp_transmission_complete(dmludp_connection)){
                         start = std::chrono::high_resolution_clock::now();
                         std::array<struct iovec, 1> siov;
@@ -280,9 +264,15 @@ int main() {
                         }
                     }
 
-                    // std::vector<uint8_t> padding(1446, 0);
-                    size_t sent = 0;
                     auto has_error = dmludp_get_dmludp_error(dmludp_connection);
+                    if (has_error == 0){
+                        if (result != 1 || result != 4 || result != 5){
+                            continue;
+                        }
+                    }
+
+                    size_t sent = 0;
+                    
                     ssize_t wlen = 0;
                     size_t need_to_send = 0;
                     size_t before_error_sent = 0;
@@ -319,8 +309,8 @@ int main() {
                     if (need_to_send != sent){
                         continue;
                     }
+                    dmludp_conn_recovery(dmludp_connection);
                     
-
                     if (has_error == 11 && (sent == need_to_send)){
                         dmludp_set_error(dmludp_connection, 0, 0);
                     }

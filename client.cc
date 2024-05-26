@@ -132,7 +132,7 @@ int main() {
                 if (events[n].events & EPOLLIN){
                     struct mmsghdr msgs[500];
                     struct iovec iovecs[500];
-                    uint8_t bufs[500][1500];
+                    uint8_t bufs[500][9000];
 
                     for (int i = 0; i < 500; i++) {
                         iovecs[i].iov_base = bufs[i];
@@ -190,7 +190,7 @@ int main() {
                                 }
                             }
                         }
-                        receive_number++;
+                        receive_number+=retval;
                     }
                     if(has_elicit_packet){
                         auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_len);

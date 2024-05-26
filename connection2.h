@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <numeric>
 #include "packet.h"
-#include "Recovery.h"
+#include "Recovery2.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include <cmath>
@@ -21,8 +21,6 @@ namespace dmludp {
 
 
 const size_t HEADER_LENGTH = 26;
-
-// const size_t MAX_ACK_NUM = 160;
 
 const size_t MAX_ACK_NUM_PKTNUM = 1350;
 
@@ -71,6 +69,14 @@ struct RecvInfo {
     /// The local address the packet was received on.
     sockaddr_storage to;
 };
+
+enum class Send_Signal{
+    can_send = 1,
+
+    partial_send = 2,
+
+    no_send = 3
+}
 
 class sbuffer{
 public:
@@ -246,6 +252,7 @@ public:
     size_t record_win;
 
     uint64_t total_offset;
+
     size_t rx_length;
 
     bool recv_flag;
@@ -292,7 +299,6 @@ public:
 
     Received_Record_Debug RRD;
 
-    ///// 1/28/204
     // Initial elicit_ack number and all retransmission elicit ack number.
     std::map<uint64_t, std::vector<uint64_t>> keyToValues;
 
@@ -355,6 +361,10 @@ public:
     size_t current_loop_max;
 
     std::pair<uint64_t, uint64_t> receive_range;
+
+    std::pair<uint64_t, uint64_t> send_range;
+
+    std::chrono::high_resolution_clock::time_point sent_timestamp;
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -477,7 +487,7 @@ public:
         
         // All side can send data.
         if (pkt_ty == Type::ACK){
-            process_ack(src, src_len);
+            process_acknowledge(src, src_len);
             if (ack_set.size() == 0){
                 stop_ack = true;
             }
@@ -547,151 +557,56 @@ public:
         current_loop_min = current_loop_max + 1;
     }
 
-
-    // remove unnessary vectore construct
-    void process_ack(uint8_t* src, size_t src_len){
-        Packet_num_len pkt_num;
-        Priority_len pkt_priorty;
-        Offset_len pkt_offset;
-        Acknowledge_sequence_len pkt_seq;
-        Acknowledge_time_len pkt_ack_time;
-        Difference_len pkt_difference;
-        Packet_len pkt_len;
-        auto pkt_ty = header_info(src, src_len, pkt_num, pkt_priorty, pkt_offset, pkt_seq, pkt_ack_time, pkt_difference, pkt_len);
+    void process_acknowledge(uint8_t* src, size_t src_len){
+        Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
 
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
 
-        if (ack_set.empty()){
-            stop_ack = true;
-            return;
+        bool loss_check = false;
+        size_t received_num = 0;
+        uint64_t start_pn = send_pkt_duration[pkt_num].first;
+        uint64_t end_pn = send_pkt_duration[pkt_num].second;
+
+        uint64_t start_pn_check = send_range.first;
+        uint64_t end_pn_check = send_range.second;
+
+        if (start_pn != start_pn_check && end_pn != end_pn_check){
+            std::cout<<"send_range has some error"<<std::endl;
         }
 
-        auto received_ack = pkt_num;
-        
-        auto initial_ack = valueToKeys.find(received_ack);
-        
-        auto check_ack = retransmission_ack.find(received_ack);
-        if(check_ack != retransmission_ack.end()){
-            handshake = retransmission_ack.at(pkt_num).second;
-        }else{
-            auto timeout_check = timeout_ack.find(received_ack);
-            if(timeout_check != timeout_ack.end()){
-                handshake = timeout_ack.at(pkt_num).second;
-            }else{
-                return;
-            }
-        }
-        update_rtt();
-
-        auto last_index = keyToValues[valueToKeys[received_ack]].back();
-        uint64_t start_pn = send_pkt_duration[last_index].first;
-        uint64_t end_pn = send_pkt_duration[last_index].second;
-        
-        uint64_t ini = 0;
-        // std::cout<<"retransmission_ack"<<std::endl;
-        // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
-        //     std::cout << "Key: " << it->first << std::endl;
-        // }
-        // std::cout<<"send_pkt_duration"<<std::endl;
-        // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
-        //     std::cout << "Key: " << it->first << std::endl;
-        // }
-        if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
-            if (initial_ack != valueToKeys.end()){
-                ini = valueToKeys[received_ack];
-                ack_set.erase(ini);
-                for (int key : keyToValues[ini]) {
-                    retransmission_ack.erase(key);
-                    send_pkt_duration.erase(key);
-                    valueToKeys.erase(key);
-                    timeout_ack.erase(key);
-                }
-            }else{
-                return;
-            }
-            keyToValues.erase(ini);
-        }
-        
-        // auto result = send_pkt_duration.erase(received_ack);
-
-        // std::vector<uint8_t> unackbuf(buf.begin() + 26, buf.begin() + 26 + hd->pkt_length);
-
-        size_t len = src_len - HEADER_LENGTH;
-        size_t start = 0;
-        float weights = 0;        
-        auto real_index = 0;
-        // bool non_sent = true;
-        for (auto check_pn = start_pn ; check_pn <= end_pn ; check_pn++){   
-            // if (check_pn == start_pn){
-            //     std::cout<<"[Debug] ACK first packet num:"<<check_pn<<std::endl;
-            // }   
-            // auto real_index = check_pn - start_pn + HEADER_LENGTH;
-            uint8_t priority = 1;
-            if (check_pn >= first_pkt || check_pn <= end_pkt){
-                auto pkt_index = HEADER_LENGTH + 2 * sizeof(uint64_t) + check_pn - first_pkt;
-                priority = src[pkt_index];
-            }
+        for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+            auto check_offset = pktnum2offset[check_pn];
             
-            auto unack = pktnum2offset[check_pn];
-            if (sent_dic.find(unack) != sent_dic.end()){
-                if (sent_dic.at(unack) == 0){
-                    send_buffer.ack_and_drop(unack);
-		            // std::cout<<" remove condition 1"<<std::endl;
-                    // non_sent = true;
-                }
+            auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
+            if (src[received_] == 0){
+                send_buffer.acknowledege_and_drop(check_offset, true);
+                received_num++;
             }else{
-                continue;
-            }
-
-            if (priority != 0){
-                // convert the result of priority_calculation to uint64
-                priority = priority_calculation(unack);
-            }
-
-            if (priority == 1){
-                weights += 0.15;
-            }else if (priority == 2) {
-                weights += 0.2;
-            }else if (priority == 3) {
-                weights += 0.25;
-            }else{
-                send_buffer.ack_and_drop(unack);
-                // non_sent = true;
-		        // std::cout<<" remove condition 2"<<std::endl;
-            }
-            auto real_priority = priority_calculation(unack);
-            if (priority != 0 && real_priority == 3){
-                high_priority += 1;
-            }
-            
-            if (pkt_ack_time == 1 || (end_pkt - last_application_pktnum) < MIN_ACK_RANGE_DIFFERENCE){
-                if ((real_index + 1) % 8 == 0 || check_pn == end_pn){
-                    double pnum = (real_index + 1) % 8;
-                    if (pnum == 0){
-                        pnum = 8;
-                    }
-                    recovery.update_win(weights, pnum);
-                    weights = 0;
+                loss_check = true;
+                if (sent_dic.at(check_offset) != 0){
+                    send_buffer.acknowledege_and_drop(check_offset, false);
+                }else{
+                    // Send proactive low priority packet if it wasn't received by receiver.
+                    send_buffer.acknowledege_and_drop(check_offset, true);
                 }
             }
-
-            real_index++;
-            // if (!non_sent){
-            //     std::cout<<"[Loss] pn:"<<check_pn<<" not receive"<<std::endl;  
-            // }
-
-            // if (check_pn == end_pn){
-            //     std::cout<<"[Debug] ACK last packet num:"<<check_pn<<std::endl;
-            // }
         }
-        if (send_buffer.pos == 0){
-            // std::cout<<std::endl;
-            // std::cout<<"[Before] send_buffer.size()"<<send_buffer.data.size()<<std::endl;
-            send_buffer.recv_and_drop();
-            // std::cout<<"[After] send_buffer.size()"<<send_buffer.data.size()<<std::endl;
-            // std::cout<<std::endl;
-        }    
+
+        // Add lock to difference timeout acknowledge
+        if (first_pkt == start_pn && end_pn == end_pkt && !loss_check){
+            // if waiting until timer expires.
+            recovery.update_win(true);
+            update_rtt();
+            send_pkt_duration.erase(pkt_num);
+            send_range = std::make_pair(1, 0);
+        }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
+            recovery.update_win(true, received_num);
+        }
+        else{
+            // waiting timer expires.
+            recovery.update_win(false, received_num);
+        }
     }
 
 
@@ -740,7 +655,6 @@ public:
             return result;
         }else{
             size_t off_len = 0;
-            
             auto result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, congestion_window, off_len);
             return result;
         }
@@ -803,6 +717,10 @@ public:
     void clear_sent_once(){
         written_data_once = 0;
     }
+ 
+    void data_preparation(){
+        data2buffer(data_buffer.at(current_buffer_pos));
+    }
 
     void recovery_send_buffer(){
         send_buffer.recovery_data();
@@ -825,167 +743,45 @@ public:
         return result;
     }
 
-    // Prepare send buffer in advance.
-    void data_preparation(){
-        data2buffer(data_buffer.at(current_buffer_pos));
+    // Check timeout or not
+    bool on_timeout(){
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
+        if (sent_timestamp + duration < now){
+            return true;
+        }else{
+            return false;
+        }
     }
 
-    ssize_t send_mmsg(std::vector<std::shared_ptr<Header>> &hdrs, std::vector<struct mmsghdr> &messages, std::vector<struct iovec> &iovecs, std::vector<std::vector<uint8_t>> &out_ack){
-        ssize_t written_len = 0;
-
-        if(!retransmission_ack.empty()){
-            // Data preparation
-            data_preparation();
-            if (recovery.cwnd_available() <= 0){
-                return -1;
-            }
-        }
-
-        auto start = std::chrono::high_resolution_clock::now();
-        size_t congestion_window = 0;
-        auto high_ratio = 0.0;
-        
-        high_priority = 0;
-        sent_number = 0;
-        
-        congestion_window = recovery.cwnd();
-
-        record_win = congestion_window;
-
-        if (send_buffer.is_empty()){
-            for (auto i = current_buffer_pos; i < data_buffer.size(); ){
-                auto wlen = data2buffer(data_buffer.at(current_buffer_pos), congestion_window);
-                written_len += wlen;
-                i++;
-                
-                if (i == data_buffer.size()){
-                    break;
-                }
-            }
-        }
-
-        
-        for (auto i = current_buffer_pos ; i < data_buffer.size() ;){
-            auto wlen = nwrite(data_buffer.at(current_buffer_pos), congestion_window);
-            if (wlen == -2){
-                written_len = 0;
-                break;
-            }
-            written_len += wlen;
-            if (data_buffer[current_buffer_pos].left == 0 && (current_buffer_pos == data_buffer.size() - 1))
-                break;
-            if (data_buffer.at(current_buffer_pos).sent() == data_buffer.at(current_buffer_pos).len && (current_buffer_pos < data_buffer.size())){
-                current_buffer_pos += 1;
-            }
-            if (written_len >= congestion_window)
-                break;
-            
-            if (send_buffer.cap()<=0){
-                break;
-            }
-        }
-        
-        // auto send_seq = pkt_num_spaces.at(1).updatepktnum();
-        auto send_seq = 0;
-        // consider add ack message at the end of the flow.
-        iovecs.resize((send_buffer.data.size()) * 2);
-        messages.resize(send_buffer.data.size());
-        std::vector<uint64_t> ack_seq_vector;
-        for (auto i = 0; ; ++i){
-            if (i % MAX_ACK_NUM_PKTNUM == 0){
-                send_seq = pkt_num_spaces.at(1).updatepktnum();
-                ack_seq_vector.push_back(send_seq);
-            }
-            Packet_num_len out_len = 0; 
-            Offset_len out_off = 0;
-            bool s_flag = false;
-            auto pn = 0;
-            auto priority = 0;
-            
-            pn = pkt_num_spaces.at(0).updatepktnum();
-
-            s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
-            out_off -= (uint16_t)out_len;
-            sent_count += 1;
-            sent_number += 1;
-            
-            priority = priority_calculation(out_off);
-            Type ty = Type::Application;
-
-            last_application_pktnum = pn;
-    
-            std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, 0, send_connection_difference, out_len);
-            hdrs.push_back(hdr);
-            iovecs[2*i].iov_base = (void *)hdr.get();
-            iovecs[2*i].iov_len = HEADER_LENGTH;
-            
-            auto offset = out_off;
-            if (sent_dic.find(out_off) != sent_dic.end()){
-                if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
-                    sent_dic[out_off] -= 1;
-                }
+    ssize_t check_status(){
+        /*
+        1. acknowledge within timer, no time out. can_send: true, timeout: false.
+        2. no acknowledge packet arrive, no time out. start preparing send_buffer. can_send: false, timeout: false.
+        3. partial acknowlege packet arrive, no time out. send equivalent packets and preparing send buffer. can
+        4. time out. timeout true
+        */
+        if (on_timeout()){
+            if (can_send){
+                return 4;
             }else{
-                sent_dic[out_off] = priority;
+                can_send = true;
+                return 5;
             }
-
-            
-            record2ack_pktnum.push_back(pn);
-            pktnum2offset[pn] = out_off;
-            messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
-            messages[i].msg_hdr.msg_iovlen = 2;
-
-
-            if (s_flag){     
-                stop_flag = true;
-                if ((i+1) < send_buffer.data.size()){
-                    iovecs.resize((i + 1) * 2);
-                    messages.resize(i + 1);
+        }else{
+            if (can_send){
+                //TODO: set cwnd to send buffer
+                return 1;
+            }else{
+                if (partial_send){
+                    return 2;
+                }else{
+                    data_preparation();
+                    return 3;
                 }
-                auto end = std::chrono::high_resolution_clock::now();
-                send_preparation = end - start;
-                break;
             }
-
         }
-        // auto ack_index = 0;
-        // while (true){
-        //     auto result = generate_elicit_ack_message(ack_seq_vector, ack_index);
-        //     if (result == false){
-        //         break;
-        //     }
-        //     ack_index++;
-        // }
-
-        auto index = 0;
-        out_ack.resize((record2ack_pktnum.size() / MAX_ACK_NUM_PKTNUM) + 1);
-        auto ioves_size = iovecs.size();
-        auto message_size = messages.size();
-        iovecs.resize(ioves_size + out_ack.size());
-        messages.resize(message_size + out_ack.size());
-        while (true){
-            auto result = send_elicit_ack_message_pktnum_new(out_ack[index], send_seq);
-            if (result == -1){
-                break;
-            }
-            iovecs[ioves_size].iov_base = out_ack[index].data();
-            iovecs[ioves_size].iov_len = out_ack[index].size();
-
-            messages[message_size].msg_hdr.msg_iov = &iovecs[ioves_size];
-            messages[message_size].msg_hdr.msg_iovlen = 1;
-            ioves_size++;
-            message_size++;
-            index++;
-        }
-
-
-        if (written_len){
-            stop_ack = false;
-        }
-
-        written_data_len += written_len;
-
-  	    return written_len;
-    };
+    }
 
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
@@ -993,63 +789,13 @@ public:
         std::vector<struct iovec> &iovecs,
         std::vector<std::vector<uint8_t>> &out_ack)
     {
-        auto sbuf = data_buffer.at(current_buffer_pos);
-        
-        ssize_t written_len = 0;
-
-        if(!retransmission_ack.empty()){
-            // Data preparation
-
-            return -1;
-        }
-
-        auto start = std::chrono::high_resolution_clock::now();
-        size_t congestion_window = 0;
-        auto high_ratio = 0.0;
-        if (high_priority == 0 && sent_number){
-            high_ratio = 0;
-        }else{
-            high_ratio = (double)high_priority  / (double)sent_number;
-        }
-        high_priority = 0;
-        sent_number = 0;
-        if (high_ratio > CONGESTION_THREAHOLD){
-            congestion_window = recovery.rollback();
-        }else{
-            congestion_window = recovery.cwnd();
-        };
-        record_win = congestion_window;
-        
-        for (auto i = current_buffer_pos ; i < data_buffer.size() ;){
-            auto wlen = nwrite(data_buffer.at(current_buffer_pos), congestion_window);
-            if (wlen == -2){
-                written_len = 0;
-                break;
-            }
-            written_len += wlen;
-            if (data_buffer[current_buffer_pos].left == 0 && (current_buffer_pos == data_buffer.size() - 1))
-                break;
-            if (data_buffer.at(current_buffer_pos).sent() == data_buffer.at(current_buffer_pos).len && (current_buffer_pos < data_buffer.size())){
-                current_buffer_pos += 1;
-            }
-            if (written_len >= congestion_window)
-                break;
-            
-            if (send_buffer.cap()<=0){
-                break;
-            }
-        }
-        
-        // auto send_seq = pkt_num_spaces.at(1).updatepktnum();
         auto send_seq = 0;
         // consider add ack message at the end of the flow.
-        iovecs.resize((send_buffer.data.size()) * 2);
-        messages.resize(send_buffer.data.size());
-        std::vector<uint64_t> ack_seq_vector;
+        iovecs.resize((recovery.cwnd()/MAX_SEND_UDP_PAYLOAD_SIZE + 1)* 2);
+        messages.resize((recovery.cwnd()/MAX_SEND_UDP_PAYLOAD_SIZE +1)* 2);
         for (auto i = 0; ; ++i){
             if (i % MAX_ACK_NUM_PKTNUM == 0){
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
-                ack_seq_vector.push_back(send_seq);
             }
             Packet_num_len out_len = 0; 
             Offset_len out_off = 0;
@@ -1066,15 +812,12 @@ public:
             
             priority = priority_calculation(out_off);
             Type ty = Type::Application;
-
-            last_application_pktnum = pn;
     
             std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, 0, send_connection_difference, out_len);
             hdrs.push_back(hdr);
             iovecs[2*i].iov_base = (void *)hdr.get();
             iovecs[2*i].iov_len = HEADER_LENGTH;
             
-            auto offset = out_off;
             if (sent_dic.find(out_off) != sent_dic.end()){
                 if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
                     sent_dic[out_off] -= 1;
@@ -1082,13 +825,11 @@ public:
             }else{
                 sent_dic[out_off] = priority;
             }
-
             
             record2ack_pktnum.push_back(pn);
             pktnum2offset[pn] = out_off;
             messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
             messages[i].msg_hdr.msg_iovlen = 2;
-
 
             if (s_flag){     
                 stop_flag = true;
@@ -1102,14 +843,6 @@ public:
             }
 
         }
-        // auto ack_index = 0;
-        // while (true){
-        //     auto result = generate_elicit_ack_message(ack_seq_vector, ack_index);
-        //     if (result == false){
-        //         break;
-        //     }
-        //     ack_index++;
-        // }
 
         auto index = 0;
         out_ack.resize((record2ack_pktnum.size() / MAX_ACK_NUM_PKTNUM) + 1);
@@ -1131,7 +864,6 @@ public:
             message_size++;
             index++;
         }
-
 
         if (written_len){
             stop_ack = false;
@@ -1181,6 +913,8 @@ public:
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         retransmission_ack[pn] = std::make_pair(wait_ack, now);
         send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
+
+        send_range = std::make_pair(start_pktnum, end_pktnum);
         // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
 
         pktlen += HEADER_LENGTH;
@@ -1190,197 +924,6 @@ public:
     size_t get_error_sent(){
         return dmludp_error_sent;
     }
-
-    bool generate_elicit_ack_message(std::vector<uint64_t> ack_seq_vector, int index_){
-        auto ty = Type::ElicitAck;        
-        auto preparenum = record2ack_pktnum.size();
-        if(record2ack_pktnum.empty()){
-            return false;
-        }
-
-        size_t pktlen = 0;
-
-        uint64_t start_pktnum = record2ack_pktnum[0];
-        
-        size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
-
-        uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
-
-        auto pn = ack_seq_vector[index_];
-        // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
-
-        if(sent_num == record2ack_pktnum.size()){
-            record2ack_pktnum.clear();
-        }else{
-            record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
-        }
-
-        ack_set.insert(pn);
-        keyToValues[pn].push_back(pn);
-        valueToKeys[pn] = pn;
-        ack_point += sent_num;
-        std::vector<uint8_t> wait_ack(2 * sizeof(uint64_t));
-        memcpy(wait_ack.data(), &start_pktnum, sizeof(uint64_t));
-        memcpy(wait_ack.data() + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
-        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-        retransmission_ack[pn] = std::make_pair(wait_ack, now);
-        send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
-        // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
-
-        pktlen += HEADER_LENGTH;
-        return true;
-    }
-
-    // ssize_t send_msg(std::vector<uint8_t> &padding, 
-    //     std::vector<struct msghdr> &messages, 
-    //     std::vector<struct iovec> &iovecs)
-    // {
-    //     auto sbuf = data_buffer.at(current_buffer_pos);
-    //     ssize_t written_len = 0;
-    //     if(!retransmission_ack.empty()){
-    //         return -1;
-    //     }
-    //     if (get_dmludp_error() != 11){
-    //         size_t congestion_window = 0;
-    //         auto high_ratio = 0.0;
-    //         if (high_priority == 0 && sent_number){
-    //             high_ratio = 0;
-    //         }else{
-    //             high_ratio = (double)high_priority  / (double)sent_number;
-    //         }
-    //         high_priority = 0;
-    //         sent_number = 0;
-    //         if (high_ratio > CONGESTION_THREAHOLD){
-    //             congestion_window = recovery.rollback();
-    //         }else{
-    //             congestion_window = recovery.cwnd();
-    //         };
-    //         record_win = congestion_window;
-
-            
-    //         for (auto i = current_buffer_pos ; i < data_buffer.size() ;){
-    //             auto wlen = nwrite(data_buffer.at(current_buffer_pos), congestion_window);
-    
-    //             if (wlen == -2){
-    //                 written_len = 0;
-    //                 break;
-    //             }
-    //             written_len += wlen;
-    //             if (data_buffer[current_buffer_pos].left == 0 && (current_buffer_pos == data_buffer.size() - 1))
-    //                 break;
-    //             if (data_buffer.at(current_buffer_pos).sent() == data_buffer.at(current_buffer_pos).len && (current_buffer_pos < data_buffer.size())){
-    //                 current_buffer_pos += 1;
-    //             }
-    //             if (written_len >= congestion_window)
-    //                 break;
-                
-    //             if (send_buffer.cap()<=0){
-    //                 break;
-    //             }
-    //         }
-    //     }else{
-    //         send_buffer.sent = 0;
-    //     }
-
-
-    //     // consider add ack message at the end of the flow.
-    //     iovecs.resize(send_buffer.data.size() * 2);
-    //     messages.resize(send_buffer.data.size());
-
-    //     // unlock memory allocation, and consider move this to function parameter.
-    //     std::vector<std::shared_ptr<Header>> hdrs;
-    //     for (auto i = 0; ; ++i){
-    //         size_t out_len = 0; 
-    //         uint64_t out_off = 0;
-    //         bool s_flag = false;
-    //         auto pn = 0;
-	//         auto priority = 0;
-	//         if (get_dmludp_error() == 0){
-    //             s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
-    //             out_off -= (uint64_t)out_len;
-    //             sent_count += 1;
-    //             sent_number += 1;
-    //             pn = pkt_num_spaces.at(0).updatepktnum();
-    //             priority = priority_calculation(out_off);
-    //             Type ty = Type::Application;
-             
-    //             std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, (uint64_t)out_len);
-    //             hdrs.push_back(hdr);
-    //             iovecs[2*i].iov_base = (void *)hdr.get();
-    //             iovecs[2*i].iov_len = HEADER_LENGTH;
-	// 	    }else{
-    //             if (i < dmludp_error_sent){
-	// 		        send_buffer.emit(iovecs[0], out_len, out_off);
-    //                 continue;
-    //             }
-
-    //             s_flag = send_buffer.emit(iovecs[(i-dmludp_error_sent)*2+1], out_len, out_off);
-    //             out_off -= (uint64_t)out_len;
-
-    //             pn = pkt_num_spaces.at(0).updatepktnum();
-    //             priority = priority_calculation(out_off);
-    //             Type ty = Type::Application;
-          
-    //             std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off , (uint64_t)out_len);
-    //             hdrs.push_back(hdr);
-    //             iovecs[2*(i-dmludp_error_sent)].iov_base = (void *)hdr.get();
-    //             iovecs[2*(i-dmludp_error_sent)].iov_len = HEADER_LENGTH;
-    //         }
-    //         auto offset = out_off;
-    //         if (sent_dic.find(out_off) != sent_dic.end()){
-    //             if (sent_dic[out_off] != 3&& ((get_dmludp_error() != 11))){
-    //                 sent_dic[out_off] -= 1;
-    //             }
-    //         }else{
-    //             sent_dic[out_off] = priority;
-    //         }
-
-    //         // if (out_len != MAX_SEND_UDP_PAYLOAD_SIZE){
-    //         //     std::cout<<"[Send] offset: "<<offset<<", len:"<<out_len<<", pn:"<<pn<<std::endl;
-    //         // }
-            
-
-    //         if (get_dmludp_error() == 0){
-    //             record_send.push_back(offset);
-    //             record2ack.push_back(offset);
-    //             messages[i].msg_iov = &iovecs[2*i];
-    //             messages[i].msg_iovlen = 2;
-    //         }else{
-    //             messages[i-dmludp_error_sent].msg_iov = &iovecs[2*(i-dmludp_error_sent)];
-    //             messages[i-dmludp_error_sent].msg_iovlen = 2;
-    //         }
-
-
-    //         if (s_flag){
-    //             stop_flag = true;
-    //             if ((i+1) < send_buffer.data.size()){
-    //                 if (get_dmludp_error() == 0){
-    //                     iovecs.resize((i+1) * 2);
-    //                     messages.resize(i+1);
-    //                 }else{
-    //                     iovecs.resize((i + 1 - dmludp_error_sent) * 2);
-    //                     messages.resize(i + 1 - dmludp_error_sent);
-    //                 }
-    //             }
-    //             else{
-    //                 if (get_dmludp_error() == 11){
-    //                     iovecs.resize((i + 1 - dmludp_error_sent) * 2);
-    //                     messages.resize(i + 1 - dmludp_error_sent);
-    //                 }
-    //             }
-    //             break;
-    //         }
-
-    //     }
-    //     if (written_len){
-    //         stop_ack = false;
-    //     }
-
-
-    //     written_data_len += written_len;
-
-  	//     return written_len;
-    // };
 
     size_t get_dmludp_error(){
         return dmludp_error;
@@ -1422,180 +965,6 @@ public:
             current_buffer_pos = 0;
         }
         return result;
-    }
-
-    // ssize_t send_elicit_ack_message(std::vector<uint8_t> &out){
-    //     auto ty = Type::ElicitAck;        
-    //     auto preparenum = record2ack.size();
-    //     if(record2ack.empty()){
-    //         return -1;
-    //     }
-
-    //     size_t pktlen = 0;
-        
-    //     size_t sent_num = std::min(preparenum, MAX_ACK_NUM);
-    //     pktlen = sent_num * sizeof(uint64_t);
-    //     auto pn = pkt_num_spaces.at(1).updatepktnum();
-    //     Header* hdr = new Header(ty, pn, 0, 0, pktlen);
-    //     out.resize(pktlen + HEADER_LENGTH);
-    //     memcpy(out.data(), hdr, HEADER_LENGTH);
-    //     memcpy(out.data() + HEADER_LENGTH, record2ack.data(), record2ack.size());
-    //     if(sent_num == record2ack.size()){
-    //         record2ack.clear();
-    //     }else{
-    //         record2ack.erase(record2ack.begin(), record2ack.begin()+ sent_num);
-    //     }
-
-    //     delete hdr; 
-    //     hdr = nullptr; 
-    //     ack_set.insert(pn);
-    //     keyToValues[pn].push_back(pn);
-    //     valueToKeys[pn] = pn;
-    //     ack_point += sent_num;
-    //     std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
-    //     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-    //     retransmission_ack[pn] = std::make_pair(wait_ack, now);
-    //     pktlen += HEADER_LENGTH;
-    //     return pktlen;
-    // }
-
-    ssize_t send_elicit_ack_message_pktnum(std::vector<uint8_t> &out){
-        auto ty = Type::ElicitAck;        
-        auto preparenum = record2ack_pktnum.size();
-        if(record2ack_pktnum.empty()){
-            return -1;
-        }
-
-        size_t pktlen = 0;
-
-        uint64_t start_pktnum = record2ack_pktnum[0];
-        
-        size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
-
-        uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
-
-        auto pn = pkt_num_spaces.at(1).updatepktnum();
-        Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
-        // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
-        out.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
-
-        hdr->to_bytes(out);
-        memcpy(out.data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
-        memcpy(out.data() + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
-        if(sent_num == record2ack_pktnum.size()){
-            record2ack_pktnum.clear();
-        }else{
-            record2ack_pktnum.erase(record2ack_pktnum.begin(), record2ack_pktnum.begin() + sent_num);
-        }
-
-        delete hdr; 
-        hdr = nullptr; 
-        ack_set.insert(pn);
-        keyToValues[pn].push_back(pn);
-        valueToKeys[pn] = pn;
-        ack_point += sent_num;
-        std::vector<uint8_t> wait_ack(out.begin()+ HEADER_LENGTH, out.end());
-        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-        retransmission_ack[pn] = std::make_pair(wait_ack, now);
-        send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
-        // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
-
-        pktlen += HEADER_LENGTH;
-        return pktlen;
-    }
-
-    // Time our occurs, timerfd triger this function and send retranmssion elicit ack.
-    ssize_t send_timeout_elicit_ack_message(std::vector<std::vector<uint8_t>> &out, std::set<std::chrono::high_resolution_clock::time_point> &timestamps){
-        auto ty = Type::ElicitAck;
-
-        std::vector<uint64_t> pn_list;
-        timestamps.clear();
-        // Cancel timerfd.
-        if (retransmission_ack.empty()){
-            return -1;
-        }
-        
-        for (const auto& e : retransmission_ack){
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
-            if ((e.second.second + duration) < now ){
-                pn_list.push_back(e.first);
-            }
-            else{
-                timestamps.insert(e.second.second + duration);
-            }
-        }
-        // No timeout occur
-        if (pn_list.size() == 0){
-            return 0;
-        }
-        for(auto n : pn_list){
-            std::vector<uint8_t> out_buffer;
-            uint64_t pktnum = pkt_num_spaces.at(1).updatepktnum();
-            // std::cout<<"[Elicit] Elicit acknowledge packet(time out) num:"<<pktnum<<std::endl;
-            // auto ty = Type::ElicitAck;
-            size_t pktlen = retransmission_ack.at(n).first.size();
-            Header* hdr = new Header(ty, pktnum, 0, 0, pktnum, 0, send_connection_difference, pktlen);
-            pktlen += HEADER_LENGTH;
-            out_buffer.resize(pktlen);
-
-            memcpy(out_buffer.data(),hdr, HEADER_LENGTH);
-
-            std::vector<uint8_t> wait_ack(retransmission_ack.at(n).first.begin(), retransmission_ack.at(n).first.end());
-
-            memcpy(out_buffer.data() + HEADER_LENGTH, retransmission_ack.at(n).first.data(), retransmission_ack.at(n).first.size());
-
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            auto initial_pn = valueToKeys[n];
-            keyToValues[initial_pn].push_back(pktnum);
-            valueToKeys[pktnum] = initial_pn;
-            // std::cout<<"1 pktnum:"<<pktnum<<" send_timeout_elicit_ack_message retransmission_ack"<<std::endl;
-            // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
-            auto it = retransmission_ack.find(n);
-            if (it != retransmission_ack.end()) {
-                /// remove?
-                timeout_ack.insert(*it);
-                ///
-                retransmission_ack.erase(it);
-            }
-
-            retransmission_ack[pktnum] = std::make_pair(wait_ack, now);
-            // std::cout<<"2 pktnum:"<<pktnum<<" send_timeout_elicit_ack_message retransmission_ack"<<std::endl;
-            // for (auto it = retransmission_ack.begin(); it != retransmission_ack.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
-
-            uint64_t start_send_pn;
-            uint64_t end_send_pn;
-            memcpy(&start_send_pn, wait_ack.data(), sizeof(uint64_t));
-            memcpy(&end_send_pn, wait_ack.data() + sizeof(uint64_t), sizeof(uint64_t));
-            // std::cout<<"1 pktnum:"<<pktnum<<" send_timeout_elicit_ack_message send_pkt_duration"<<std::endl;
-            // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
-
-            send_pkt_duration.erase(n);
-            send_pkt_duration[pktnum] = std::make_pair(start_send_pn, end_send_pn);
-
-            // std::cout<<"2 pktnum:"<<pktnum<<" send_timeout_elicit_ack_message send_pkt_duration"<<std::endl;
-            // for (auto it = send_pkt_duration.begin(); it != send_pkt_duration.end(); ++it) {
-            //     std::cout << "Key: " << it->first << std::endl;
-            // }
-            
-            delete hdr; 
-            hdr = nullptr; 
-            out.push_back(out_buffer);
-        }
-
-        // remove?
-        if (timestamps.empty()){
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
-            timestamps.insert(now + duration);
-        }
-        return pn_list.size(); 
     }
 
     //Send single packet
@@ -1708,15 +1077,6 @@ public:
         return stop_flag && stop_ack && initial;
     };
 
-    //Start updating congestion control window and sending new data.
-    bool is_ack(){
-        auto now = std::chrono::high_resolution_clock::now();
-        auto interval = now - handshake;
-        if (interval > rtt){
-            return true;
-        }
-        return false;
-    };
 
     // Check if fixed length of first entry in received buffer exist.
     bool check_first_entry(size_t check_len){
@@ -1834,13 +1194,13 @@ public:
     };
 
     // Send buffer is empty or not. If it is empty, send_all() will try to fill it with new data.
-    bool data_is_empty(){
-        return send_buffer.data.empty();
-    };
+    // bool data_is_empty(){
+    //     return send_buffer.data.empty();
+    // };
 
-    bool is_empty(){
-        return send_data_buf.empty();
-    };
+    // bool is_empty(){
+    //     return send_data_buf.empty();
+    // };
 
     // bool ack_clear(){
     //     return send_buffer.check_ack();
@@ -1850,9 +1210,9 @@ public:
     //     return ack_clear() && is_empty();
     // }
 
-    bool empty(){
-        return data_is_empty() && is_empty();
-    }
+    // bool empty(){
+    //     return data_is_empty() && is_empty();
+    // }
     
 };
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <cstring>
 #include <chrono>
-#include "connection.h"
+#include "connection2.h"
 #include "RangeBuf.h"
 #include "recv_buf.h"
 #include "send_buf.h"
@@ -154,22 +154,26 @@ inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
 }
 
 // inline bool dmludp_conn_is_empty(Connection* conn){
-inline bool dmludp_conn_is_empty(std::shared_ptr<Connection> conn){
-    return conn->data_is_empty();
+// inline bool dmludp_conn_is_empty(std::shared_ptr<Connection> conn){
+//     return conn->data_is_empty();
+// }
+
+inline bool dmludp_conn_recovery(std::shared_ptr<Connection> conn){
+    conn->recovery_send_buffer();
 }
 
-inline bool dmludp_conn_data_empty(std::shared_ptr<Connection> conn){
-    return conn->data_empty();
-};
+// inline bool dmludp_conn_data_empty(std::shared_ptr<Connection> conn){
+//     return conn->data_empty();
+// };
 
 // inline long dmludp_get_rtt(Connection* conn){
 inline long dmludp_get_rtt(std::shared_ptr<Connection> conn){
     return conn->get_rtt();
 }
 
-inline long dmludp_is_empty(std::shared_ptr<Connection> conn){
-    return conn->empty();
-}
+// inline long dmludp_is_empty(std::shared_ptr<Connection> conn){
+//     return conn->empty();
+// }
 
 // inline ssize_t dmludp_send_data_stop(Connection* conn, uint8_t* out, size_t out_len){
 inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
@@ -182,9 +186,9 @@ inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* 
 }
 
 // inline bool dmludp_buffer_is_empty(Connection* conn){
-inline bool dmludp_buffer_is_empty(std::shared_ptr<Connection> conn){
-    return conn->is_empty();
-}
+// inline bool dmludp_buffer_is_empty(std::shared_ptr<Connection> conn){
+//     return conn->is_empty();
+// }
 
 // inline bool dmludp_conn_is_stop(Connection* conn){
 inline bool dmludp_conn_is_stop(std::shared_ptr<Connection> conn){
