@@ -67,7 +67,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 auto b = send_index.at(tmp_pos);
      
                 if(data[b].second != 0){
-                    return b.first;
+                    return data[b].first;
                 }
                 tmp_pos += 1;
             }
@@ -168,7 +168,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 return 0;
             }
 
-            auto written_length_;
+            int written_length_;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
                 data[off] = std::make_pair(src + start_off + written_length_, packet_len);
@@ -190,13 +190,13 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             out_len = 0;
             out_off = (uint32_t)off_front();
             while (ready()){
-                if(pos >= data.size()){
+                if(pos >= send_index.size()){
                     break;
                 }
 
-                auto buf = data.at(pos);
+                auto buf = data[send_index.at(pos)];
 
-                if (buf.second.second == 0){
+                if (buf.second == 0){
                     pos += 1;
                     continue;
                 }
@@ -204,20 +204,20 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 size_t buf_len = 0;
                 
                 bool partial;
-                if(buf.second.second <= MIN_SENDBUF_INITIAL_LEN){
+                if(buf.second <= MIN_SENDBUF_INITIAL_LEN){
                     partial = true;
                 }else{
                     partial = false;
                 }
 
                 // Copy data to the output buffer.
-                out.iov_base = (void *)(buf.second.first);
-                out.iov_len = buf.second.second;
+                out.iov_base = (void *)(buf.first);
+                out.iov_len = buf.second;
 
-                length -= (uint64_t)(buf.second.second);
-                used_length -= (buf.second.second);
+                length -= (uint64_t)(buf.second);
+                used_length -= (buf.second);
 
-                out_len = buf.second.second;
+                out_len = buf.second;
 
                 pos += 1;
 
@@ -248,7 +248,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         void recovery_data(){
             for (auto i : data_copy){
-                data[i.first].second = data_copy.second;
+                data[i.first].second = i.second;
                 send_index.push_back(i.first);
             }
             data_copy.clear();
