@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include "dmludp.h"
-#include "connection2.h"
+#include "connection.h"
 #include "RangeBuf.h"
-#include "Recovery2.h"
+#include "Recovery.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include <iostream>

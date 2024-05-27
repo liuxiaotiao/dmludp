@@ -1,7 +1,7 @@
 #pragma once
 #include <cstring>
 #include <chrono>
-#include "connection2.h"
+#include "connection.h"
 #include "RangeBuf.h"
 #include "recv_buf.h"
 #include "send_buf.h"
