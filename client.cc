@@ -168,7 +168,7 @@ int main() {
                                 uint64_t pkt_num;
 
                                 // TODO: check received first and then copy the data.
-                                auto rv = dmludp_process_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                                auto rv = dmludp_process_header_info(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
                                     has_elicit_packet = true;
@@ -194,7 +194,7 @@ int main() {
                     }
 
                     if(has_elicit_packet){
-                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_len);
+                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
                         ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                         ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
                         if(dmludp_conn_receive_complete(dmludp_connection)){
@@ -215,7 +215,7 @@ int main() {
                     for (auto index = 0; index < receive_number; index++){
                         auto rv = static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base)[0];
                         if (rv == 3){
-                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), msgs[index].msg_hdr.msg_iov->iov_len);
                         }
                     } 
                     
