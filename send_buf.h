@@ -31,7 +31,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         size_t used_length;
 
-        std::map<uint64_t, bool> offset_recv;
+        std::vector<uint64_t> send_index;
 
         uint64_t removed;
 
@@ -46,7 +46,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         pos(0),
         off(0),
         length(0),
-        max_data(MIN_SENDBUF_INITIAL_LEN * 8),
+        max_data(MIN_SENDBUF_INITIAL_LEN * 10),
         used_length(0),
         removed(0),
         sent(0),
@@ -63,9 +63,10 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         uint64_t off_front() {
             auto tmp_pos = pos;
 
-            while (tmp_pos <= (data.size() - 1)){
-                auto b = data.at(tmp_pos);
-                if(b.second.second != 0){
+            while (tmp_pos <= (send_index.size() - 1)){
+                auto b = send_index.at(tmp_pos);
+     
+                if(data[b].second != 0){
                     return b.first;
                 }
                 tmp_pos += 1;
@@ -97,7 +98,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 data_restore(in_offset);
             }
         }
-
 
         void clear(){
             data.clear();
@@ -163,8 +163,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         // write() will let input data serilize
         ssize_t write(uint8_t* src, size_t start_off, size_t &write_data_len, size_t window_size, size_t off_len){
-            sent = 0;
-
             // All data has been written into buffer, all buffer data has been sent
             if (write_data_len == 0){
                 return 0;
@@ -173,14 +171,16 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             auto written_length_;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
-                offset_recv[off] = true;
                 data[off] = std::make_pair(src + start_off + written_length_, packet_len);
                 off += (uint64_t) packet_len;
                 length += (uint64_t) packet_len;
                 used_length += packet_len;
                 written_length_ += packet_len;
                 write_data_len -= packet_len;
+                send_index.push_back(off);
             }
+
+            std::sort(send_index.begin(), send_index.end()); 
 
             return written_length_;
         }
@@ -229,7 +229,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             }
             sent += out_len;
 
-            // std::cout<<"sent:"<<sent<<", max_data:"<<max_data<<", pos:"<<pos<<", data.size()"<<data.size()<<std::endl;
             //All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
                 stop = true;
@@ -241,14 +240,19 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             }
             
             out_off += (uint32_t)out_len;
+            if (stop){
+                send_index.clear();
+            }
             return stop;
         };
 
         void recovery_data(){
             for (auto i : data_copy){
                 data[i.first].second = data_copy.second;
+                send_index.push_back(i.first);
             }
             data_copy.clear();
+            std::sort(send_index.begin(), send_index.end()); 
         }
 
     };
