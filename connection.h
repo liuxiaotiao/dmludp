@@ -549,6 +549,7 @@ public:
         auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
         off = reinterpret_cast<Header *>(data)->offset;
         // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
+        auto pkt_seq = reinterpret_cast<Header *>(data)->seq;
 
         if (result == Type::Application){
             if (receive_pktnum2offset.find(pn) != receive_pktnum2offset.end()){

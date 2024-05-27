@@ -67,7 +67,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 auto b = send_index.at(tmp_pos);
      
                 if(data[b].second != 0){
-                    return data[b].first;
+                    return b;
                 }
                 tmp_pos += 1;
             }
