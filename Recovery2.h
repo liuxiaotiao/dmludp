@@ -72,7 +72,7 @@ class Recovery{
 
     bool timeout_recovery;
 
-    double k;
+    double K;
 
     Recovery():
     app_limit(false),
@@ -89,7 +89,7 @@ class Recovery{
     no_loss(true),
     parital_allowed(INI_WIN),
     timeout_recovery(false),
-    K(0),
+    K(0.0),
     ssthread(SIZE_MAX){
         max_datagram_size = PACKET_SIZE;
         congestion_window = INI_WIN;
@@ -165,7 +165,7 @@ class Recovery{
                 W_max = congestion_window;
             }else{
                 congestion_window *= BETA;
-                K = std::pow(W_max * BETA / C, 1.0/3/0);
+                K = std::cbrt(W_max * BETA / C);
                 change_status();
             }
         }
