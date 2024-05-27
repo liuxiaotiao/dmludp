@@ -168,7 +168,7 @@ int main() {
                                 uint64_t pkt_num;
 
                                 // TODO: check received first and then copy the data.
-                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                                auto rv = dmludp_process_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
                                     has_elicit_packet = true;

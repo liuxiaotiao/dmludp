@@ -552,7 +552,7 @@ public:
     };
 
 
-    void pre_process_application_packet(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn){
+    int pre_process_application_packet(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn){
         auto result = reinterpret_cast<Header *>(data)->ty;
         pn = reinterpret_cast<Header *>(data)->pkt_num;
         auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
@@ -595,6 +595,7 @@ public:
                 recv_dic.insert(std::make_pair(off, pkt_priorty));
             }
         }
+        return result;
     }
 
     bool send_ack(){

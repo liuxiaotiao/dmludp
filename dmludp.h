@@ -70,7 +70,16 @@ inline void dmludp_config_free(Config* config){
     delete config;
 }
 
-inline int dmludp_header_info(std::shared_ptr<Connection> conn, uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
+inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
+    auto result = reinterpret_cast<Header *>(data)->ty;
+    pn = reinterpret_cast<Header *>(data)->pkt_num;
+    // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
+    off = reinterpret_cast<Header *>(data)->offset;
+    // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
+    return result;
+}
+
+inline int dmludp_process_header_info(std::shared_ptr<Connection> conn, uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
     return conn->pre_process_application_packet(data, buf_len, off, pn);
 }
 
