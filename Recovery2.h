@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <set>
-#include "connection.h"
+#include "connection2.h"
 namespace dmludp{
 
 // Congestion Control
@@ -72,6 +72,8 @@ class Recovery{
 
     bool timeout_recovery;
 
+    double k;
+
     Recovery():
     app_limit(false),
     bytes_in_flight(0),
@@ -87,6 +89,7 @@ class Recovery{
     no_loss(true),
     parital_allowed(INI_WIN),
     timeout_recovery(false),
+    K(0),
     ssthread(SIZE_MAX){
         max_datagram_size = PACKET_SIZE;
         congestion_window = INI_WIN;
@@ -119,7 +122,7 @@ class Recovery{
                 timeout_recovery = false;
             }
         }else{
-            if (!timed_out){
+            if (!timeout_){
                 parital_allowed = instant_send;
                 no_loss = true;
                 timeout_recovery = true;
@@ -155,12 +158,14 @@ class Recovery{
                 }
 
                 if (is_congestion){
+                    
                     congestion_window += C * std::pow(cubic_time - K, 3.0) + W_max;
                     cubic_time++;
                 }
                 W_max = congestion_window;
             }else{
                 congestion_window *= BETA;
+                K = std::pow(W_max * BETA / C, 1.0/3/0);
                 change_status();
             }
         }

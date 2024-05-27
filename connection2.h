@@ -14,7 +14,7 @@
 #include "packet.h"
 #include "Recovery2.h"
 #include "recv_buf.h"
-#include "send_buf.h"
+#include "send_buf2.h"
 #include <cmath>
 
 namespace dmludp {
@@ -553,43 +553,43 @@ public:
     void pre_process_application_packet(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn){
         auto result = reinterpret_cast<Header *>(data)->ty;
         pn = reinterpret_cast<Header *>(data)->pkt_num;
-        // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
+        auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
         off = reinterpret_cast<Header *>(data)->offset;
         // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
 
         if (result == Type::Application){
-            if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
+            if (receive_pktnum2offset.find(pn) != receive_pktnum2offset.end()){
                 std::cout<<"[Error] Duplicate application packet"<<std::endl;
                 _Exit(0);
             }
                 
             // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
-            if (pkt_offset == 0){
+            if (off == 0){
                 clear_recv_setting();
             }
-            if (pkt_num > current_loop_max){
-                current_loop_max = pkt_num;
+            if (pn > current_loop_max){
+                current_loop_max = pn;
             }
 
-            if (pkt_num < current_loop_min){
-                current_loop_min = pkt_num;
+            if (pn < current_loop_min){
+                current_loop_min = pn;
             }
             send_num = pkt_seq;
 
             // Debug
-            if (recv_dic.find(pkt_offset) != recv_dic.end()){
+            if (recv_dic.find(off) != recv_dic.end()){
                 // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
                 // RRD.show();
                 // _Exit(0);
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                receive_pktnum2offset.insert(std::make_pair(pn, off));
                 // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                recv_dic.insert(std::make_pair(off, pkt_priorty));
             }else{
                 recv_count += 1;
                 // optimize to reduce copy time.
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                receive_pktnum2offset.insert(std::make_pair(pn, off));
                 // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                recv_dic.insert(std::make_pair(off, pkt_priorty));
             }
         }
         
