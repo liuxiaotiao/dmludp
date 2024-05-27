@@ -359,6 +359,12 @@ public:
 
     std::chrono::high_resolution_clock::time_point sent_timestamp;
 
+    bool can_send;
+
+    bool partial_send;
+
+    size_t congestion_window;
+
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
     sent_count(0),
@@ -407,7 +413,10 @@ public:
     send_connection_difference(0),
     receive_connection_difference(1),
     current_loop_min(0),
-    current_loop_max(0)
+    current_loop_max(0),
+    can_send(true),
+    partial_send(false),
+    congestion_window(0)
     {};
 
     ~Connection(){
@@ -639,12 +648,14 @@ public:
             update_rtt();
             send_pkt_duration.erase(pkt_num);
             send_range = std::make_pair(1, 0);
+            can_send = true;
         }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
             recovery.update_win(true, received_num);
         }
         else{
             // waiting timer expires.
             recovery.update_win(false, received_num);
+            partial_send = true;
         }
     }
 
@@ -819,8 +830,10 @@ public:
     {
         auto send_seq = 0;
         // consider add ack message at the end of the flow.
-        iovecs.resize((recovery.cwnd()/MAX_SEND_UDP_PAYLOAD_SIZE + 1)* 2);
-        messages.resize((recovery.cwnd()/MAX_SEND_UDP_PAYLOAD_SIZE +1)* 2);
+        iovecs.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + 1)* 2);
+        messages.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE +1)* 2);
+        size_t written_len = 0;
+        auto start = std::chrono::high_resolution_clock::now();
         for (auto i = 0; ; ++i){
             if (i % MAX_ACK_NUM_PKTNUM == 0){
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
@@ -858,6 +871,7 @@ public:
             pktnum2offset[pn] = out_off;
             messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
             messages[i].msg_hdr.msg_iovlen = 2;
+            written_len += out_len;
 
             if (s_flag){     
                 stop_flag = true;
@@ -898,6 +912,8 @@ public:
         }
 
         written_data_len += written_len;
+        can_send = false;
+        partial_send = false;
 
   	    return written_len;
     };
@@ -984,7 +1000,7 @@ public:
             _Exit(0);
         }
 
-        if (send_buffer.data.size() != 0 || send_buffer.offset_recv.size() != 0){
+        if (send_buffer.data.size() != 0){
             result = false;
         }
         

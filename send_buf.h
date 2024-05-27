@@ -140,6 +140,10 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             max_data = maxdata;
         };
 
+        size_t last_congestion_window(){
+            return max_data;
+        }
+
         ////rewritetv
         /// Resets the stream at the current offset and clears all buffered data.
         uint64_t reset(){
