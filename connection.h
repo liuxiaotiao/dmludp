@@ -796,12 +796,19 @@ public:
         if (on_timeout()){
             if (can_send){
                 congestion_window = recovery.cwnd();
+                send_buffer.update_max_data(congestion_window);
+                if (data_buffer.at(current_buffer_pos).left > 0){
+                    data2buffer(data_buffer.at(current_buffer_pos));
+                }
                 return 4;
             }else{
                 recovery.set_recovery();
                 can_send = true;
                 congestion_window = recovery.cwnd();
                 send_buffer.update_max_data(congestion_window);
+                if (data_buffer.at(current_buffer_pos).left > 0){
+                    data2buffer(data_buffer.at(current_buffer_pos));
+                }
                 return 5;
             }
         }else{
@@ -809,6 +816,9 @@ public:
                 //TODO: set cwnd to send buffer
                 congestion_window = recovery.cwnd();
                 send_buffer.update_max_data(congestion_window);
+                if (data_buffer.at(current_buffer_pos).left > 0){
+                    data2buffer(data_buffer.at(current_buffer_pos));
+                }
                 return 1;
             }else{
                 if (partial_send){

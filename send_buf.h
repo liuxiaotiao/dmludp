@@ -42,6 +42,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         std::unordered_set<uint64_t> recv_count;
 
+        std::vector<uint64_t> record_off;
+
         SendBuf():
         pos(0),
         off(0),
@@ -61,12 +63,12 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         /// Returns the lowest offset of data buffered.
         uint64_t off_front() {
-            auto tmp_pos = pos;
-
+            auto tmp_pos = pos;  
             while (tmp_pos <= (send_index.size() - 1)){
                 auto b = send_index.at(tmp_pos);
      
                 if(data[b].second != 0){
+                    record_off.push_back(tmp_pos);
                     return b;
                 }
                 tmp_pos += 1;
@@ -246,6 +248,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             out_off += (uint32_t)out_len;
             if (stop){
                 send_index.clear();
+                remove_indexes(send_index, record_off);
             }
             return stop;
         };
@@ -261,4 +264,16 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
     };
     
+    void remove_indexes(std::vector<int>& target, const std::vector<size_t>& indexes) {
+        std::vector<size_t> sorted_indexes = indexes;
+        std::sort(sorted_indexes.begin(), sorted_indexes.end(), std::greater<size_t>());
+
+        for (size_t index : sorted_indexes) {
+            if (index < target.size()) {
+                target.erase(target.begin() + index); 
+            } else {
+                std::cerr << "Index " << index << " out of range." << std::endl;
+            }
+        }
+    }
 }

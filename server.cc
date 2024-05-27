@@ -266,7 +266,7 @@ int main() {
 
                     auto has_error = dmludp_get_dmludp_error(dmludp_connection);
                     if (has_error == 0){
-                        if (result != 1 || result != 4 || result != 5){
+                        if ((result == 2) || (result == 3)){
                             continue;
                         }
                     }
