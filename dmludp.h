@@ -70,8 +70,8 @@ inline void dmludp_config_free(Config* config){
     delete config;
 }
 
-inline int dmludp_header_info(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
-    return pre_process_application_packet(data, buf_len, off, pn);
+inline int dmludp_header_info(std::shared_ptr<Connection> conn, uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn) {
+    return conn->pre_process_application_packet(data, buf_len, off, pn);
 }
 
 // inline Connection* dmludp_accept(sockaddr_storage local, sockaddr_storage peer, Config config) {
@@ -111,11 +111,6 @@ inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn,
 
 inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
     return conn->transmission_complete();
-}
-
-inline ssize_t dmludp_send_timeout_elicit_ack_message(std::shared_ptr<Connection> conn, std::vector<std::vector<uint8_t>> &out, std::set<std::chrono::high_resolution_clock::time_point> &timestamps){
-    size_t written = conn->send_timeout_elicit_ack_message(out, timestamps);
-    return written; 
 }
 
 inline ssize_t dmludp_send_data_acknowledge(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){

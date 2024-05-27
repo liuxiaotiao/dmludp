@@ -70,14 +70,6 @@ struct RecvInfo {
     sockaddr_storage to;
 };
 
-enum class Send_Signal{
-    can_send = 1,
-
-    partial_send = 2,
-
-    no_send = 3
-}
-
 class sbuffer{
 public:
     uint8_t * src;
@@ -98,6 +90,7 @@ public:
     size_t sent(){
         return len - left;
     };
+
     void written(size_t result){
         left -= result;
     };
@@ -456,7 +449,7 @@ public:
         pkt_difference = reinterpret_cast<Header *>(src)->difference;
         pkt_len = reinterpret_cast<Header *>(src)->pkt_length;
         return pkt_ty;
-    }
+    };
 
     size_t recv_slice(uint8_t* src, size_t src_len){
         recv_count += 1;
@@ -592,8 +585,6 @@ public:
                 recv_dic.insert(std::make_pair(off, pkt_priorty));
             }
         }
-        
-        return result;
     }
 
     bool send_ack(){
