@@ -89,7 +89,7 @@ int main() {
 
             uint32_t off = 0;
             uint64_t pktnum = 0;
-            auto header = dmludp_header_info(buffer, 24, off, pktnum);
+            auto header = dmludp_header_info(buffer, 26, off, pktnum);
             if(header != 2){
                 continue;
             }

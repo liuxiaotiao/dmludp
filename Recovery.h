@@ -146,7 +146,6 @@ class Recovery{
         if (timeout_recovery){
             congestion_window = INI_WIN;
             W_max = congestion_window;
-            set_recovery(false);
             change_status();
         }else{
             if (no_loss = true){
@@ -171,7 +170,7 @@ class Recovery{
             }
         }
         
-        set_recovery();
+        set_recovery(false);
         parameter_reset();
         return congestion_window;
     }
