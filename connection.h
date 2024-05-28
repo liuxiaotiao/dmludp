@@ -426,6 +426,8 @@ public:
     void update_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;    
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
+        std::cout << "update_rtt: " << now_ns << " ns" << std::endl;
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
@@ -505,10 +507,10 @@ public:
 
         if (pkt_ty == Type::Application){
             // std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
-            if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
-                std::cout<<"[Error] Duplicate application packet"<<std::endl;
-                _Exit(0);
-            }
+            // if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
+            //     std::cout<<"[Error] Duplicate application packet"<<std::endl;
+            //     _Exit(0);
+            // }
             
             // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
             if (pkt_offset == 0){
@@ -529,6 +531,7 @@ public:
                 // RRD.show();
                 // _Exit(0);
                 receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
                 // Debug
                 recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
             }else{
@@ -652,11 +655,13 @@ public:
             can_send = true;
         }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
             recovery.update_win(true, received_num);
+            can_send = false;
         }
         else{
             // waiting timer expires.
             recovery.update_win(false, received_num);
             partial_send = true;
+            can_send = false;
         }
     }
 
@@ -705,6 +710,7 @@ public:
         sent_dic.clear();
         pktnum2offset.clear();
         ack_point = 0;
+        current_buffer_pos = 0;
 
         if (!send_pkt_duration.empty()){
             std::cout<<"[Error] send_pkt_duration is not empty!"<<std::endl;
@@ -802,7 +808,7 @@ public:
                 }
                 return 4;
             }else{
-                recovery.set_recovery();
+                recovery.set_recovery(true);
                 can_send = true;
                 congestion_window = recovery.cwnd();
                 send_buffer.update_max_data(congestion_window);
@@ -841,10 +847,15 @@ public:
     {
         auto send_seq = 0;
         // consider add ack message at the end of the flow.
-        iovecs.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + 1)* 2);
-        messages.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE +1)* 2);
+        size_t add_one = 0;
+        if(congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE != 0){
+            add_one = 1;
+        }
+        iovecs.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + add_one)* 2);
+        messages.resize(congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + add_one);
         size_t written_len = 0;
         auto start = std::chrono::high_resolution_clock::now();
+        sent_timestamp = start;
         for (auto i = 0; ; ++i){
             if (i % MAX_ACK_NUM_PKTNUM == 0){
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
@@ -858,7 +869,7 @@ public:
             pn = pkt_num_spaces.at(0).updatepktnum();
 
             s_flag = send_buffer.emit(iovecs[i*2+1], out_len, out_off);
-            out_off -= (uint16_t)out_len;
+            // out_off -= (uint16_t)out_len;
             sent_count += 1;
             sent_number += 1;
             
@@ -1045,7 +1056,7 @@ public:
 
         if (ty == Type::ACK){
             feed_back = false;
-            psize = (uint64_t)(receive_result.size());
+            psize = (uint64_t)(receive_result.size()) + 2 * sizeof(uint64_t);
             Header* hdr = new Header(ty, send_num, 0, 0, send_num, 1, send_connection_difference, psize);
             memcpy(out, hdr, HEADER_LENGTH);
             memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
@@ -1115,6 +1126,9 @@ public:
         size_t total_len = HEADER_LENGTH;
         // out = handshake_header;
         memcpy(out, handshake_header, HEADER_LENGTH);
+        handshake = std::chrono::high_resolution_clock::now();
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
+        std::cout << "send_data_handshake: " << now_ns << " ns" << std::endl;
         return total_len;
     };
 

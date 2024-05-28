@@ -138,14 +138,15 @@ class Recovery{
         return (cwnd_increment == last_cwnd);
     }
 
-    void set_recovery(){
-        timeout_recovery = !timeout_recovery;
-    }
+    void set_recovery(bool recovery_signal){
+        timeout_recovery = recovery_signal;
+    };
 
     size_t cwnd(){
         if (timeout_recovery){
             congestion_window = INI_WIN;
             W_max = congestion_window;
+            set_recovery(false);
             change_status();
         }else{
             if (no_loss = true){

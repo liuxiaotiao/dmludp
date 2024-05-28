@@ -20,7 +20,8 @@
 #define CLIENT_IP "10.10.1.2"
 
 int main() {
-    std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);
+    // std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);
+    std::ifstream file("small.bin", std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         std::cerr << "Error opening file" << std::endl;
         return 1;
@@ -124,7 +125,6 @@ int main() {
                 continue;
             }
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, rv);
-            auto written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
             break;
         }
     }else{
@@ -251,7 +251,7 @@ int main() {
                 if (events[n].events & EPOLLOUT){
                     std::vector<std::vector<uint8_t>> out;
                     std::set<std::chrono::high_resolution_clock::time_point> timestamps;
-                    auto result = dmludp_conn_check_status(dmludp_connection);
+                    
                     if (dmludp_transmission_complete(dmludp_connection)){
                         start = std::chrono::high_resolution_clock::now();
                         std::array<struct iovec, 1> siov;
@@ -263,7 +263,7 @@ int main() {
                             return false;
                         }
                     }
-
+                    auto result = dmludp_conn_check_status(dmludp_connection);
                     auto has_error = dmludp_get_dmludp_error(dmludp_connection);
                     if (has_error == 0){
                         if ((result == 2) || (result == 3)){

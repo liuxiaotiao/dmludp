@@ -184,6 +184,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 written_length_ += packet_len;
                 write_data_len -= packet_len;
                 send_index.push_back(off);
+                off += (uint64_t) packet_len;
             }
 
             std::sort(send_index.begin(), send_index.end()); 
@@ -201,6 +202,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 }
 
                 auto buf = data[send_index.at(pos)];
+
+                std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second"<<buf.second<<std::endl;
 
                 if (buf.second == 0){
                     pos += 1;
@@ -246,9 +249,11 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             }
             
             out_off += (uint32_t)out_len;
+            out_off = send_index.at(pos);
             if (stop){
                 send_index.clear();
                 remove_indexes(send_index, record_off);
+                sent = 0;
             }
             return stop;
         };
@@ -260,20 +265,22 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             }
             data_copy.clear();
             std::sort(send_index.begin(), send_index.end()); 
-        }
+        };
+
+        void remove_indexes(std::vector<uint64_t>& target, const std::vector<uint64_t>& indexes) {
+            std::vector<size_t> sorted_indexes = indexes;
+            std::sort(sorted_indexes.begin(), sorted_indexes.end(), std::greater<size_t>());
+
+            for (size_t index : sorted_indexes) {
+                if (index < target.size()) {
+                    target.erase(target.begin() + index); 
+                } else {
+                    std::cerr << "Index " << index << " out of range." << std::endl;
+                }
+            }
+        };
 
     };
     
-    void remove_indexes(std::vector<int>& target, const std::vector<size_t>& indexes) {
-        std::vector<size_t> sorted_indexes = indexes;
-        std::sort(sorted_indexes.begin(), sorted_indexes.end(), std::greater<size_t>());
-
-        for (size_t index : sorted_indexes) {
-            if (index < target.size()) {
-                target.erase(target.begin() + index); 
-            } else {
-                std::cerr << "Index " << index << " out of range." << std::endl;
-            }
-        }
-    }
+    
 }
