@@ -1173,9 +1173,9 @@ public:
     //     return stop_flag && stop_ack;
     // }
 
-    // bool is_stopped(){
-    //     return stop_flag && stop_ack && initial;
-    // };
+    bool is_stopped(){
+        return stop_flag && stop_ack && initial;
+    };
 
 
     // Check if fixed length of first entry in received buffer exist.

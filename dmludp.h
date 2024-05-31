@@ -127,9 +127,9 @@ inline ssize_t dmludp_send_data_acknowledge(std::shared_ptr<Connection> conn, ui
 
 }
 
-inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
-    return conn->enable_adding();
-}
+// inline bool dmludp_enable_adding(std::shared_ptr<Connection> conn){
+//     return conn->enable_adding();
+// }
 
 inline bool dmludp_conn_recovery(std::shared_ptr<Connection> conn){
     conn->recovery_send_buffer();
@@ -150,13 +150,13 @@ inline ssize_t dmludp_send_data_stop(std::shared_ptr<Connection> conn, uint8_t* 
 }
 
 // inline bool dmludp_conn_is_stop(Connection* conn){
-inline bool dmludp_conn_is_stop(std::shared_ptr<Connection> conn){
-    return conn->is_stopped();
-}
+// inline bool dmludp_conn_is_stop(std::shared_ptr<Connection> conn){
+//     return conn->is_stopped();
+// }
 
-inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
-    return conn->is_waiting();
-}
+// inline bool dmludp_is_waiting(std::shared_ptr<Connection> conn){
+//     return conn->is_waiting();
+// }
 
 inline ssize_t dmludp_send_data_handshake(std::shared_ptr<Connection> conn, uint8_t* out, size_t out_len){
     if (out_len == 0){

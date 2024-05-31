@@ -118,7 +118,7 @@ int main() {
         return -1;
     }
     dmludp_conn_recv_reset(dmludp_connection);
-    dmludp_conn_rx_len(dmludp_connection, 1131413504);
+    dmludp_conn_rx_len(dmludp_connection, 1048576);
     size_t recv_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
