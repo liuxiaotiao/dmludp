@@ -178,7 +178,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
                 data[off] = std::make_pair(src + start_off + written_length_, packet_len);
-                off += (uint64_t) packet_len;
                 length += (uint64_t) packet_len;
                 used_length += packet_len;
                 written_length_ += packet_len;

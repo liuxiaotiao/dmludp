@@ -92,7 +92,7 @@ class Recovery{
     K(0.0),
     ssthread(SIZE_MAX){
         max_datagram_size = PACKET_SIZE;
-        congestion_window = INI_WIN;
+        congestion_window = 0;
         last_cwnd = INI_WIN;
         W_max = INI_WIN;
         W_last_max = INI_WIN;
@@ -151,7 +151,11 @@ class Recovery{
             if (no_loss = true){
                 if (is_slow_start){
                     if (congestion_window < ssthread){
-                        congestion_window *= 2;
+                        if (congestion_window == 0){
+                            congestion_window = INI_WIN;
+                        }else{
+                            congestion_window *= 2;
+                        }     
                     }else{
                         congestion_window += 1;
                     }

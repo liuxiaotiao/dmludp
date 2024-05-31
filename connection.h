@@ -423,17 +423,44 @@ public:
 
     };
 
+    void initial_rtt() {
+        auto arrive_time = std::chrono::high_resolution_clock::now();
+        srtt = arrive_time - handshake;
+        rttvar = srtt / 2;
+        rto = srtt + 4 * rttvar;
+    }
+
     void update_rtt() {
+        /*
+        handshake_confirmed
+        handshake_complete
+        
+        1st RTO:
+        SRTT <- R
+        RTTVAR <- R/2
+        RTO <- SRTT + max (G, K*RTTVAR)
+        where K = 4.
+        */
+
+        /*
+        RTTVAR <- (1 - beta) * RTTVAR + beta * |SRTT - R'|
+        SRTT <- (1 - alpha) * SRTT + alpha * R'
+        RTO <- SRTT + max (G, K*RTTVAR)
+        */
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;    
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
-        std::cout << "update_rtt: " << now_ns << " ns" << std::endl;
+        std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count()<<std::endl;
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
+        std::cout<<"tmp_srtt:"<<tmp_srtt.count()<<std::endl;
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
+        std::cout<<"tmp_rttvar:"<<tmp_rttvar.count()<<std::endl;
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
+        std::cout<<"new srtt:"<<srtt.count()<<std::endl;
         rto = srtt + 4 * rttvar;
+        std::cout<<"rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     };
 
     void set_rtt(uint64_t inter){
@@ -478,14 +505,17 @@ public:
         size_t read_ = 0;
 
         if (pkt_ty == Type::Handshake && is_server){
-            update_rtt();
+            if(handshake_completed){
+                initial_rtt();
+            }
             handshake_completed = true;
             initial = true;
         }
-        
-        //If receiver receives a Handshake packet, it will be papred to send a Handshank.
+
+        //If receiver receives a Handshake packet, it will be prepared to send a Handshank.
         if (pkt_ty == Type::Handshake && !is_server){
-            handshake_confirmed = false;
+            initial_rtt();
+            handshake_confirmed = true;
             feed_back = true;
         }
         
@@ -530,17 +560,17 @@ public:
                 // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
                 // RRD.show();
                 // _Exit(0);
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-                rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
+                // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                // rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
                 // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
             }else{
                 recv_count += 1;
                 // optimize to reduce copy time.
                 rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-                receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+                // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
                 // Debug
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+                // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
             }
                      
         }
@@ -785,6 +815,7 @@ public:
     bool on_timeout(){
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
+        std::cout<<"on_time:"<<duration.count()<<std::endl;
         if (sent_timestamp + duration < now){
             return true;
         }else{
@@ -848,7 +879,7 @@ public:
         auto send_seq = 0;
         // consider add ack message at the end of the flow.
         size_t add_one = 0;
-        if(congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE != 0){
+        if(congestion_window%MAX_SEND_UDP_PAYLOAD_SIZE != 0){
             add_one = 1;
         }
         iovecs.resize((congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + add_one)* 2);
@@ -936,7 +967,7 @@ public:
         written_data_len += written_len;
         can_send = false;
         partial_send = false;
-
+        set_handshake();
   	    return written_len;
     };
 
@@ -1072,7 +1103,7 @@ public:
             return total_len;
         }
 
-        handshake = std::chrono::high_resolution_clock::now();
+        // handshake = std::chrono::high_resolution_clock::now();
 
         total_len += (size_t)psize;
 
@@ -1133,18 +1164,18 @@ public:
     };
 
     // Add Wating for receving(12.28)
-    bool is_waiting(){
-        return waiting_flag;
-    }
+    // bool is_waiting(){
+    //     return waiting_flag;
+    // }
 
-    bool enable_adding(){
-        // return ack_set.empty() && (send_buffer.pos == 0);
-        return stop_flag && stop_ack;
-    }
+    // bool enable_adding(){
+    //     // return ack_set.empty() && (send_buffer.pos == 0);
+    //     return stop_flag && stop_ack;
+    // }
 
-    bool is_stopped(){
-        return stop_flag && stop_ack && initial;
-    };
+    // bool is_stopped(){
+    //     return stop_flag && stop_ack && initial;
+    // };
 
 
     // Check if fixed length of first entry in received buffer exist.
@@ -1261,27 +1292,6 @@ public:
 
         return Type::Unknown;
     };
-
-    // Send buffer is empty or not. If it is empty, send_all() will try to fill it with new data.
-    // bool data_is_empty(){
-    //     return send_buffer.data.empty();
-    // };
-
-    // bool is_empty(){
-    //     return send_data_buf.empty();
-    // };
-
-    // bool ack_clear(){
-    //     return send_buffer.check_ack();
-    // }
-
-    // bool data_empty(){
-    //     return ack_clear() && is_empty();
-    // }
-
-    // bool empty(){
-    //     return data_is_empty() && is_empty();
-    // }
     
 };
 
