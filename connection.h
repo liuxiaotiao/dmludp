@@ -426,8 +426,11 @@ public:
     void initial_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
         srtt = arrive_time - handshake;
+        std::cout<<"Initial rtt:"<<std::chrono::duration<double, std::nano>(srtt).count();
         rttvar = srtt / 2;
+        std::cout<<", rttvar:"<<std::chrono::duration<double, std::nano>(rttvar).count();
         rto = srtt + 4 * rttvar;
+        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count();
     }
 
     void update_rtt() {
@@ -452,17 +455,18 @@ public:
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
         std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count()<<std::endl;
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
-        std::cout<<"tmp_srtt:"<<tmp_srtt.count()<<std::endl;
+        std::cout<<"tmp_srtt:"<<tmp_srtt.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        std::cout<<"tmp_rttvar:"<<tmp_rttvar.count()<<std::endl;
+        std::cout<<", tmp_rttvar:"<<tmp_rttvar.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
-        std::cout<<"new srtt:"<<srtt.count()<<std::endl;
+        std::cout<<", new srtt:"<<srtt.count();
         rto = srtt + 4 * rttvar;
-        std::cout<<"rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
+        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     };
 
+    // Merge to intial_rtt
     void set_rtt(uint64_t inter){
         if (bidirect){
             rtt = std::chrono::nanoseconds(inter);
@@ -471,7 +475,7 @@ public:
             srtt = rtt;
         }
         if (rttvar.count() == 0){
-            rttvar = rtt;
+            rttvar = rtt / 2;
         }
     };
 
@@ -669,7 +673,7 @@ public:
                 if (sent_dic.at(check_offset) != 0){
                     send_buffer.acknowledege_and_drop(check_offset, false);
                 }else{
-                    // Send proactive low priority packet if it wasn't received by receiver.
+                    // Send proactively low priority packet if it wasn't received by receiver.
                     send_buffer.acknowledege_and_drop(check_offset, true);
                 }
             }
@@ -816,7 +820,7 @@ public:
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
         std::cout<<"on_time:"<<duration.count()<<std::endl;
-        if (sent_timestamp + duration < now){
+        if (handshake + duration < now){
             return true;
         }else{
             return false;
@@ -852,6 +856,7 @@ public:
             if (can_send){
                 //TODO: set cwnd to send buffer
                 congestion_window = recovery.cwnd();
+                std::cout<<"no timeout"<<", congestion_window:"<<congestion_window<<std::endl;
                 send_buffer.update_max_data(congestion_window);
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
@@ -868,7 +873,6 @@ public:
         }
     }
 
- 
 
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
@@ -886,7 +890,7 @@ public:
         messages.resize(congestion_window/MAX_SEND_UDP_PAYLOAD_SIZE + add_one);
         size_t written_len = 0;
         auto start = std::chrono::high_resolution_clock::now();
-        sent_timestamp = start;
+        // sent_timestamp = start;
         for (auto i = 0; ; ++i){
             if (i % MAX_ACK_NUM_PKTNUM == 0){
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
@@ -968,6 +972,7 @@ public:
         can_send = false;
         partial_send = false;
         set_handshake();
+        sent_timestamp = std::chrono::high_resolution_clock::now();
   	    return written_len;
     };
 
@@ -1163,16 +1168,6 @@ public:
         return total_len;
     };
 
-    // Add Wating for receving(12.28)
-    // bool is_waiting(){
-    //     return waiting_flag;
-    // }
-
-    // bool enable_adding(){
-    //     // return ack_set.empty() && (send_buffer.pos == 0);
-    //     return stop_flag && stop_ack;
-    // }
-
     bool is_stopped(){
         return stop_flag && stop_ack && initial;
     };
@@ -1205,7 +1200,6 @@ public:
     
     size_t recv_len(){
         return rec_buffer.length();
-        // return rec_buffer.first_item_len();
     }
 
     uint8_t priority_calculation(uint64_t off){

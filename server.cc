@@ -250,7 +250,6 @@ int main() {
 
                 if (events[n].events & EPOLLOUT){
                     std::vector<std::vector<uint8_t>> out;
-                    std::set<std::chrono::high_resolution_clock::time_point> timestamps;
                     
                     if (dmludp_transmission_complete(dmludp_connection)){
                         start = std::chrono::high_resolution_clock::now();

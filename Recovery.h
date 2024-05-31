@@ -101,9 +101,9 @@ class Recovery{
     ~Recovery(){};
 
 
-    void change_status(){
-        is_congestion = !is_congestion;
-        is_slow_start = !is_slow_start;
+    void change_status(bool condition_flag){
+        is_congestion = condition_flag;
+        is_slow_start = !condition_flag;
         W_max = congestion_window;
     }
 
@@ -146,7 +146,7 @@ class Recovery{
         if (timeout_recovery){
             congestion_window = INI_WIN;
             W_max = congestion_window;
-            change_status();
+            change_status(false);
         }else{
             if (no_loss = true){
                 if (is_slow_start){
@@ -157,12 +157,11 @@ class Recovery{
                             congestion_window *= 2;
                         }     
                     }else{
-                        congestion_window += 1;
+                        congestion_window += PACKET_SIZE;
                     }
                 }
 
                 if (is_congestion){
-                    
                     congestion_window += C * std::pow(cubic_time - K, 3.0) + W_max;
                     cubic_time++;
                 }
@@ -170,7 +169,7 @@ class Recovery{
             }else{
                 congestion_window *= BETA;
                 K = std::cbrt(W_max * BETA / C);
-                change_status();
+                change_status(true);
             }
         }
         
