@@ -202,7 +202,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
                 auto buf = data[send_index.at(pos)];
 
-                std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second"<<buf.second<<std::endl;
+                // std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second:"<<buf.second<<std::endl;
 
                 if (buf.second == 0){
                     pos += 1;
@@ -274,7 +274,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 if (index < target.size()) {
                     target.erase(target.begin() + index); 
                 } else {
-                    std::cerr << "Index " << index << " out of range." << std::endl;
+                    // std::cerr << "Index " << index << " out of range." << std::endl;
                 }
             }
         };

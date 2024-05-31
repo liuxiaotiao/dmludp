@@ -1243,7 +1243,7 @@ public:
     };
 
     double get_rtt() {
-        return rto.count() + 1.2 * send_preparation.count();
+        return rto.count() + send_preparation.count();
     };   
 
     /// Returns true if the connection handshake is complete.
