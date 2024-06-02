@@ -205,11 +205,11 @@ int main() {
                             }
                         }
                     }else{
-                        // if(is_application){
-                        //     uint8_t ack[1500];
-                        //     auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                        //     auto sent_result = ::send(client_fd, ack, result, 0);
-                        // }
+                        if(is_application){
+                            uint8_t ack[1500];
+                            auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                            auto sent_result = ::send(client_fd, ack, result, 0);
+                        }
                     }
 
                     for (auto index = 0; index < receive_number; index++){

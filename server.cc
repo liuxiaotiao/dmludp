@@ -307,7 +307,10 @@ int main() {
 
                     if (need_to_send != sent){
                         continue;
+                    }else{
+                        dmludp_conn_set_send_time(dmludp_connection);
                     }
+
                     dmludp_conn_recovery(dmludp_connection);
                     
                     if (has_error == 11 && (sent == need_to_send)){

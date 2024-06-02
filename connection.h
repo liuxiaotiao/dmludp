@@ -365,6 +365,8 @@ public:
 
     size_t congestion_window;
 
+    uint8_t single_acknowlege_time;
+
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
     sent_count(0),
@@ -416,7 +418,8 @@ public:
     current_loop_max(0),
     can_send(true),
     partial_send(false),
-    congestion_window(0)
+    congestion_window(0),
+    single_acknowlege_time(0)
     {};
 
     ~Connection(){
@@ -430,7 +433,7 @@ public:
         rttvar = srtt / 2;
         std::cout<<", rttvar:"<<std::chrono::duration<double, std::nano>(rttvar).count();
         rto = srtt + 4 * rttvar;
-        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count();
+        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     }
 
     void update_rtt() {
@@ -547,7 +550,11 @@ public:
             // }
             
             // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
-            if (pkt_offset == 0){
+            // if (pkt_offset == 0){
+            //     clear_recv_setting();
+            // }
+
+            if (pkt_difference != receive_connection_difference){
                 clear_recv_setting();
             }
             if (pkt_num > current_loop_max){
@@ -557,7 +564,9 @@ public:
             if (pkt_num < current_loop_min){
                 current_loop_min = pkt_num;
             }
-            send_num = pkt_seq;
+
+            reset_single_receive_parameter(pkt_seq);
+            // send_num = pkt_seq;
 
             // Debug
             if (recv_dic.find(pkt_offset) != recv_dic.end()){
@@ -595,6 +604,7 @@ public:
         auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
         off = reinterpret_cast<Header *>(data)->offset;
         // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
+        Difference_len pkt_difference = reinterpret_cast<Header *>(data)->difference;
         auto pkt_seq = reinterpret_cast<Header *>(data)->seq;
 
         if (result == Type::Application){
@@ -604,9 +614,13 @@ public:
             }
                 
             // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
-            if (off == 0){
+            // if (off == 0){
+            //     clear_recv_setting();
+            // }
+            if (pkt_difference != receive_connection_difference){
                 clear_recv_setting();
             }
+            
             if (pn > current_loop_max){
                 current_loop_max = pn;
             }
@@ -614,7 +628,8 @@ public:
             if (pn < current_loop_min){
                 current_loop_min = pn;
             }
-            send_num = pkt_seq;
+            reset_single_receive_parameter(pkt_seq);
+            // send_num = pkt_seq;
 
             // Debug
             if (recv_dic.find(off) != recv_dic.end()){
@@ -642,6 +657,62 @@ public:
     void update_receive_parameter(){
         current_loop_min = current_loop_max + 1;
     }
+
+    // void process_acknowledge(uint8_t* src, size_t src_len){
+    //     Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
+
+    //     auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
+    //     auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
+
+    //     bool loss_check = false;
+    //     size_t received_num = 0;
+    //     uint64_t start_pn = send_pkt_duration[pkt_num].first;
+    //     uint64_t end_pn = send_pkt_duration[pkt_num].second;
+
+    //     uint64_t start_pn_check = send_range.first;
+    //     uint64_t end_pn_check = send_range.second;
+
+    //     if (start_pn != start_pn_check && end_pn != end_pn_check){
+    //         std::cout<<"send_range has some error"<<std::endl;
+    //     }
+
+    //     for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+    //         auto check_offset = pktnum2offset[check_pn];
+            
+    //         auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
+    //         if (src[received_] == 0){
+    //             send_buffer.acknowledege_and_drop(check_offset, true);
+    //             received_num++;
+    //         }else{
+    //             loss_check = true;
+    //             if (sent_dic.at(check_offset) != 0){
+    //                 send_buffer.acknowledege_and_drop(check_offset, false);
+    //             }else{
+    //                 // Send proactively low priority packet if it wasn't received by receiver.
+    //                 send_buffer.acknowledege_and_drop(check_offset, true);
+    //             }
+    //         }
+    //     }
+
+    //     // Add lock to difference timeout acknowledge
+    //     if (first_pkt == start_pn && end_pn == end_pkt && !loss_check){
+    //         // if waiting until timer expires.
+    //         recovery.update_win(true);
+    //         update_rtt();
+    //         send_pkt_duration.erase(pkt_num);
+    //         send_range = std::make_pair(1, 0);
+    //         can_send = true;
+    //     }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
+    //         recovery.update_win(true, received_num);
+    //         can_send = false;
+    //     }
+    //     else{
+    //         // waiting timer expires.
+    //         recovery.update_win(false, received_num);
+    //         partial_send = true;
+    //         can_send = false;
+    //     }
+    // }
 
     void process_acknowledge(uint8_t* src, size_t src_len){
         Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
@@ -720,6 +791,7 @@ public:
         if (rx_length == rlen){
             // RRD.clear();
             receive_connection_difference++;
+            clear_recv_setting();
             return true;
         }
         return false;
@@ -731,6 +803,10 @@ public:
 
     void reset_rx_len(){
         rx_length = 0;
+    }
+
+    void set_send_time(){
+        handshake = std::chrono::high_resolution_clock::now();
     }
     
     // Used to get pointer owner and length
@@ -812,14 +888,15 @@ public:
                 result = 0;
             }
         }
+        std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
         return result;
     }
 
     // Check timeout or not
     bool on_timeout(){
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-        std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
-        std::cout<<"on_time:"<<duration.count()<<std::endl;
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+        std::cout<<"on_time:"<<duration.count()<<", send ts: " << now_ns << " ns" <<std::endl;
         if (handshake + duration < now){
             return true;
         }else{
@@ -834,6 +911,7 @@ public:
         3. partial acknowlege packet arrive, no time out. send equivalent packets and preparing send buffer. can
         4. time out. timeout true
         */
+        ssize_t result = 0;
         if (on_timeout()){
             if (can_send){
                 congestion_window = recovery.cwnd();
@@ -841,7 +919,7 @@ public:
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
-                return 4;
+                result = 4;
             }else{
                 recovery.set_recovery(true);
                 can_send = true;
@@ -850,7 +928,7 @@ public:
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
-                return 5;
+                result = 5;
             }
         }else{
             if (can_send){
@@ -861,16 +939,18 @@ public:
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
-                return 1;
+                result = 1;
             }else{
                 if (partial_send){
-                    return 2;
+                    result = 2;
                 }else{
                     data_preparation();
-                    return 3;
+                    result = 3;
                 }
             }
         }
+        std::cout<<"check_status:"<<result<<std::endl;
+        return result;
     }
 
 
@@ -915,7 +995,7 @@ public:
             hdrs.push_back(hdr);
             iovecs[2*i].iov_base = (void *)hdr.get();
             iovecs[2*i].iov_len = HEADER_LENGTH;
-            
+            std::cout<<"pn:"<<pn<<", offset:"<<out_off<<std::endl;
             if (sent_dic.find(out_off) != sent_dic.end()){
                 if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
                     sent_dic[out_off] -= 1;
@@ -1115,6 +1195,13 @@ public:
         return total_len;
     };
 
+    void reset_single_receive_parameter(Acknowledge_sequence_len pkt_seq){
+        if (send_num != pkt_seq){
+            send_num = pkt_seq;
+            single_acknowlege_time = 0;
+        }
+    }
+
 
     size_t send_data_acknowledge(uint8_t* src, size_t src_len){
         auto ty = Type::ACK;
@@ -1234,9 +1321,12 @@ public:
 
     void set_handshake(){
         handshake = std::chrono::high_resolution_clock::now();
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
+        std::cout << "send ts: " << now_ns << " ns" << std::endl;
     };
 
     double get_rtt() {
+        return rto.count();
         return rto.count() + send_preparation.count();
     };   
 

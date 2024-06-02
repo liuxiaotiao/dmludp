@@ -102,6 +102,10 @@ inline void dmludp_set_rtt(std::shared_ptr<Connection> conn, long interval){
     conn->set_rtt(interval);
 }
 
+inline void dmludp_conn_set_send_time(std::shared_ptr<Connection> conn){
+    conn->set_send_time();
+}
+
 inline bool dmludp_get_data(std::shared_ptr<Connection> conn, struct iovec *iovecs, int iovecs_len){
     return conn->get_data(iovecs, iovecs_len);
 }
