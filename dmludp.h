@@ -132,7 +132,7 @@ inline ssize_t dmludp_send_data_acknowledge(std::shared_ptr<Connection> conn, ui
 }
 
 
-inline bool dmludp_conn_recovery(std::shared_ptr<Connection> conn){
+inline void dmludp_conn_recovery(std::shared_ptr<Connection> conn){
     conn->recovery_send_buffer();
 }
 

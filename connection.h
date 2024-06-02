@@ -894,14 +894,16 @@ public:
 
     // Check timeout or not
     bool on_timeout(){
+        bool timeout_;
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-        std::cout<<"on_time:"<<duration.count()<<", send ts: " << now_ns << " ns" <<std::endl;
+        std::cout<<"on_time:"<< now_ns << " ns" <<std::endl;
         if (handshake + duration < now){
-            return true;
+            timeout_ = true;
         }else{
-            return false;
+            timeout_ = false;
         }
+        return timeout_;
     }
 
     ssize_t check_status(){

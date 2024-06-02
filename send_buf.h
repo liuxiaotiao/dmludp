@@ -356,18 +356,18 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         };
 
         /// Returns the lowest offset of data buffered.
-        uint64_t off_front() {
-            auto tmp_pos = pos;  
-            while (tmp_pos <= (send_index.size() - 1)){
-                auto b = send_index.at(tmp_pos);
+        // uint64_t off_front() {
+        //     auto tmp_pos = pos;  
+        //     while (tmp_pos <= (send_index.size() - 1)){
+        //         auto b = send_index.at(tmp_pos);
      
-                if(data[b].second != 0){
-                    record_off.push_back(tmp_pos);
-                    return b;
-                }
-                tmp_pos += 1;
-            }
-        }
+        //         if(data[b].second != 0){
+        //             record_off.push_back(tmp_pos);
+        //             return b;
+        //         }
+        //         tmp_pos += 1;
+        //     }
+        // }
 
         uint32_t off_front(){
             uint32_t result = 0;
@@ -399,7 +399,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         }
 
         bool check_loss(){
-            return send_index.is_empty();
+            return send_index.empty();
         }
 
         void data_restore(uint32_t in_offset){
