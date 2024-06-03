@@ -365,7 +365,11 @@ public:
 
     size_t congestion_window;
 
-    uint8_t single_acknowlege_time;
+    // uint8_t single_acknowlege_time;
+
+    ssize_t timeout_acknowledge_packet_number;
+
+    std::set<uint64_t> send_packet_record;
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -419,7 +423,8 @@ public:
     can_send(true),
     partial_send(false),
     congestion_window(0),
-    single_acknowlege_time(0)
+    // single_acknowlege_time(0),
+    timeout_acknowledge_packet_number(-1)
     {};
 
     ~Connection(){
@@ -535,6 +540,12 @@ public:
 	    }
 
         if (pkt_ty == Type::ElicitAck){
+            /* TODO
+            Differenciate 2 scenario:
+            1. send_difference > receive_difference
+            2. send_difference < receive_difference
+                All elicit acknowledge should be responsed with all 1
+            */
             recv_flag = true;
             // std::cout<<"[Receive] ElicitAck packet number:"<<hdr->pkt_num<<std::endl;
             send_num = pkt_num;
@@ -543,7 +554,7 @@ public:
         }
 
         if (pkt_ty == Type::Application){
-            // std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
+            std::cout<<"[Debug] application offset:"<<pkt_offset<<", pn:"<<pkt_num<<std::endl;
             // if (receive_pktnum2offset.find(pkt_num) != receive_pktnum2offset.end()){
             //     std::cout<<"[Error] Duplicate application packet"<<std::endl;
             //     _Exit(0);
@@ -567,24 +578,26 @@ public:
 
             reset_single_receive_parameter(pkt_seq);
             // send_num = pkt_seq;
-
+            
             // Debug
-            if (recv_dic.find(pkt_offset) != recv_dic.end()){
-                // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
-                // RRD.show();
-                // _Exit(0);
-                // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-                // rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-                // Debug
-                // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            }else{
-                recv_count += 1;
-                // optimize to reduce copy time.
-                rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-                // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-                // Debug
-                // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            }
+            // if (recv_dic.find(pkt_offset) != recv_dic.end()){
+            //     // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
+            //     // RRD.show();
+            //     // _Exit(0);
+            //     // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+            //     rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
+            //     // Debug
+            //     // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+            // }else{
+            //     recv_count += 1;
+            //     // optimize to reduce copy time.
+                
+            //     // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
+            //     // Debug
+            //     // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
+            // }
+            rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
+            std::cout<<"receive buffer size:"<<rec_buffer.data.size()<<std::endl;
                      
         }
 
@@ -633,12 +646,12 @@ public:
 
             // Debug
             if (recv_dic.find(off) != recv_dic.end()){
-                // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
+                std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
                 // RRD.show();
-                // _Exit(0);
-                receive_pktnum2offset.insert(std::make_pair(pn, off));
-                // Debug
-                recv_dic.insert(std::make_pair(off, pkt_priorty));
+                _Exit(0);
+                // receive_pktnum2offset.insert(std::make_pair(pn, off));
+                // // Debug
+                // recv_dic.insert(std::make_pair(off, pkt_priorty));
             }else{
                 recv_count += 1;
                 // optimize to reduce copy time.
@@ -658,67 +671,13 @@ public:
         current_loop_min = current_loop_max + 1;
     }
 
-    // void process_acknowledge(uint8_t* src, size_t src_len){
-    //     Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
-
-    //     auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
-    //     auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
-
-    //     bool loss_check = false;
-    //     size_t received_num = 0;
-    //     uint64_t start_pn = send_pkt_duration[pkt_num].first;
-    //     uint64_t end_pn = send_pkt_duration[pkt_num].second;
-
-    //     uint64_t start_pn_check = send_range.first;
-    //     uint64_t end_pn_check = send_range.second;
-
-    //     if (start_pn != start_pn_check && end_pn != end_pn_check){
-    //         std::cout<<"send_range has some error"<<std::endl;
-    //     }
-
-    //     for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
-    //         auto check_offset = pktnum2offset[check_pn];
-            
-    //         auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
-    //         if (src[received_] == 0){
-    //             send_buffer.acknowledege_and_drop(check_offset, true);
-    //             received_num++;
-    //         }else{
-    //             loss_check = true;
-    //             if (sent_dic.at(check_offset) != 0){
-    //                 send_buffer.acknowledege_and_drop(check_offset, false);
-    //             }else{
-    //                 // Send proactively low priority packet if it wasn't received by receiver.
-    //                 send_buffer.acknowledege_and_drop(check_offset, true);
-    //             }
-    //         }
-    //     }
-
-    //     // Add lock to difference timeout acknowledge
-    //     if (first_pkt == start_pn && end_pn == end_pkt && !loss_check){
-    //         // if waiting until timer expires.
-    //         recovery.update_win(true);
-    //         update_rtt();
-    //         send_pkt_duration.erase(pkt_num);
-    //         send_range = std::make_pair(1, 0);
-    //         can_send = true;
-    //     }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
-    //         recovery.update_win(true, received_num);
-    //         can_send = false;
-    //     }
-    //     else{
-    //         // waiting timer expires.
-    //         recovery.update_win(false, received_num);
-    //         partial_send = true;
-    //         can_send = false;
-    //     }
-    // }
-
     void process_acknowledge(uint8_t* src, size_t src_len){
         Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
 
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
+
+        auto pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
 
         bool loss_check = false;
         size_t received_num = 0;
@@ -738,6 +697,8 @@ public:
             auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
+                send_packet_record.erase(check_offset);
+                std::cout<<"offset:"<<check_offset<<" received"<<std::endl;
                 received_num++;
             }else{
                 loss_check = true;
@@ -753,11 +714,16 @@ public:
         // Add lock to difference timeout acknowledge
         if (first_pkt == start_pn && end_pn == end_pkt && !loss_check){
             // if waiting until timer expires.
-            recovery.update_win(true);
-            update_rtt();
+            if (pkt_num == timeout_acknowledge_packet_number){
+                update_rtt();
+                if (!on_timeout() && send_packet_record.empty()){
+                    can_send = true;
+                    recovery.update_win(true);
+                }
+            }
+            
             send_pkt_duration.erase(pkt_num);
             send_range = std::make_pair(1, 0);
-            can_send = true;
         }else if(first_pkt == start_pn && end_pn == end_pkt && loss_check){
             recovery.update_win(true, received_num);
             can_send = false;
@@ -895,6 +861,7 @@ public:
     // Check timeout or not
     bool on_timeout(){
         bool timeout_;
+        std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
         std::cout<<"on_time:"<< now_ns << " ns" <<std::endl;
@@ -924,7 +891,7 @@ public:
                 result = 4;
             }else{
                 recovery.set_recovery(true);
-                can_send = true;
+                can_send = false;
                 congestion_window = recovery.cwnd();
                 send_buffer.update_max_data(congestion_window);
                 if (data_buffer.at(current_buffer_pos).left > 0){
@@ -973,6 +940,14 @@ public:
         size_t written_len = 0;
         auto start = std::chrono::high_resolution_clock::now();
         // sent_timestamp = start;
+        send_packet_record.clear();
+
+        uint64_t last_unack_pktnum = 0;
+        bool last_check = false;
+        if (!send_packet_record.empty()){
+            last_check = true;
+            last_unack_pktnum = *send_packet_record.begin();
+        }
         for (auto i = 0; ; ++i){
             if (i % MAX_ACK_NUM_PKTNUM == 0){
                 send_seq = pkt_num_spaces.at(1).updatepktnum();
@@ -1012,12 +987,15 @@ public:
             messages[i].msg_hdr.msg_iovlen = 2;
             written_len += out_len;
 
+            send_packet_record.insert(pn);
+
             if (s_flag){     
                 stop_flag = true;
-                if ((i+1) < send_buffer.data.size()){
+                if ((i+1) <= send_buffer.data.size()){
                     iovecs.resize((i + 1) * 2);
                     messages.resize(i + 1);
                 }
+                // std::cout<<"messages.size()"<<messages.size()<<", send_buffer.data.size()"<<send_buffer.data.size()<<std::endl;
                 auto end = std::chrono::high_resolution_clock::now();
                 send_preparation = end - start;
                 break;
@@ -1032,7 +1010,13 @@ public:
         iovecs.resize(ioves_size + out_ack.size());
         messages.resize(message_size + out_ack.size());
         while (true){
-            auto result = send_elicit_ack_message_pktnum_new(out_ack[index], send_seq);
+            size_t result = 0;
+            if (last_check){
+                result = send_elicit_ack_message_pktnum_new(out_ack[index], send_seq);
+            }else{
+                result = send_elicit_ack_message_pktnum_new(out_ack[index], send_seq, last_unack_pktnum);
+            }
+            timeout_acknowledge_packet_number = send_seq;
             if (result == -1){
                 break;
             }
@@ -1058,7 +1042,7 @@ public:
   	    return written_len;
     };
 
-    ssize_t send_elicit_ack_message_pktnum_new(std::vector<uint8_t> &out, uint64_t elicit_acknowledege_packet_number){
+    ssize_t send_elicit_ack_message_pktnum_new(std::vector<uint8_t> &out, uint64_t elicit_acknowledege_packet_number, ssize_t last_min_pkt == -1){
         auto ty = Type::ElicitAck;        
         auto preparenum = record2ack_pktnum.size();
         if(record2ack_pktnum.empty()){
@@ -1068,6 +1052,10 @@ public:
         size_t pktlen = 0;
 
         uint64_t start_pktnum = record2ack_pktnum[0];
+        
+        if(last_min_pkt != -1){
+            start_pktnum = last_min_pkt;
+        }
         
         size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
 
@@ -1317,7 +1305,7 @@ public:
                 // ack_record[pn] = 1;
             }          
         }
-
+        
         // RRD.add_acknowledeg_info(send_num, std::move(ack_record));
     }
 

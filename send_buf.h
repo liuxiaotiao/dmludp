@@ -355,31 +355,19 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             return ((ssize_t)max_data - (ssize_t)used_length);
         };
 
-        /// Returns the lowest offset of data buffered.
-        // uint64_t off_front() {
-        //     auto tmp_pos = pos;  
-        //     while (tmp_pos <= (send_index.size() - 1)){
-        //         auto b = send_index.at(tmp_pos);
-     
-        //         if(data[b].second != 0){
-        //             record_off.push_back(tmp_pos);
-        //             return b;
-        //         }
-        //         tmp_pos += 1;
-        //     }
-        // }
-
         uint32_t off_front(){
             uint32_t result = 0;
             while(dataIterator != data.end()){
                 if (dataIterator->second.second != 0){
                     result = (uint32_t)dataIterator->first;
+                    ++dataIterator;
+                    ++pos;
+                    if(std::distance(data.begin(), dataIterator) != pos){
+                        std::cout<<"postion error"<<std::endl;
+                    }
+                    break;
                 }
-                ++dataIterator;
-                ++pos;
-                if(std::distance(data.begin(), dataIterator) != pos){
-                    std::cout<<"postion error"<<std::endl;
-                }
+                
             }
             return result;
         }
@@ -395,6 +383,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 data_copy.erase(in_offset);
             }
             dataIterator = data.begin();
+            pos = 0;
             send_index.erase(std::remove(send_index.begin(), send_index.end(), in_offset), send_index.end());
         }
 
@@ -472,7 +461,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             pos = 0;
             length = 0;
             off = unsent_off;
-
+            dataIterator = data.begin();
             return unsent_len;
         };
  
@@ -558,11 +547,11 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             //All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
                 stop = true;
-                pos = 0;
+                // pos = 0;
             }
             if (pos == data.size()){
                 stop = true;
-                pos = 0;
+                // pos = 0;
             }
 
             if (stop){

@@ -197,13 +197,6 @@ int main() {
                         auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
                         ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                         ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
-                        if(dmludp_conn_receive_complete(dmludp_connection)){
-                            std::cout<<recv_time++<<" time receive complete"<<std::endl;
-                            dmludp_conn_recv_reset(dmludp_connection);
-                            if (recv_time == 100){
-                                return 0;
-                            }
-                        }
                     }else{
                         if(is_application){
                             uint8_t ack[1500];
@@ -216,6 +209,13 @@ int main() {
                         auto rv = static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base)[0];
                         if (rv == 3){
                             auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), msgs[index].msg_hdr.msg_iov->iov_len);
+                        }
+                        if(dmludp_conn_receive_complete(dmludp_connection)){
+                            std::cout<<recv_time++<<" time receive complete"<<std::endl;
+                            dmludp_conn_recv_reset(dmludp_connection);
+                            if (recv_time == 100){
+                                return 0;
+                            }
                         }
                     } 
                     
