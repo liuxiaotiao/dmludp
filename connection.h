@@ -678,8 +678,6 @@ public:
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
 
-        auto pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
-
         bool loss_check = false;
         size_t received_num = 0;
         uint64_t start_pn = send_pkt_duration[pkt_num].first;
@@ -703,7 +701,7 @@ public:
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
                 send_packet_record.erase(check_pn);
-                std::cout<<"offset:"<<check_offset<<" received"<<std::endl;
+                // std::cout<<"offset:"<<check_offset<<" received"<<std::endl;
                 received_num++;
             }else{
                 loss_check = true;
@@ -816,10 +814,10 @@ public:
         ack_point = 0;
         current_buffer_pos = 0;
 
-        if (!send_pkt_duration.empty()){
-            std::cout<<"[Error] send_pkt_duration is not empty!"<<std::endl;
-            _Exit(0);
-        }
+        // if (!send_pkt_duration.empty()){
+        //     std::cout<<"[Error] send_pkt_duration is not empty!"<<std::endl;
+        //     _Exit(0);
+        // }
 
         send_buffer.off = 0;
         if (data_buffer.size() > 0){
@@ -882,7 +880,7 @@ public:
                 result = 0;
             }
         }
-        std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
+        // std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
         return result;
     }
 
@@ -954,7 +952,7 @@ public:
                 }
             }
         }
-        std::cout<<"check_status:"<<result<<std::endl;
+        // std::cout<<"check_status:"<<result<<std::endl;
         return result;
     }
 
@@ -1006,7 +1004,7 @@ public:
             hdrs.push_back(hdr);
             iovecs[2*i].iov_base = (void *)hdr.get();
             iovecs[2*i].iov_len = HEADER_LENGTH;
-            std::cout<<"pn:"<<pn<<", offset:"<<out_off<<std::endl;
+            // std::cout<<"pn:"<<pn<<", offset:"<<out_off<<std::endl;
             if (sent_dic.find(out_off) != sent_dic.end()){
                 if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
                     sent_dic[out_off] -= 1;
