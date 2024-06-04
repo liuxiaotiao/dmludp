@@ -21,8 +21,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         // data_copy used to store last round unsent data.
         std::unordered_map<uint64_t, uint64_t> data_copy;
 
-        std::map<uint64_t, std::pair<uint8_t*, uint64_t>>::iterator dataIterator;
-
         size_t pos;
 
         uint64_t off;
@@ -54,8 +52,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         used_length(0),
         removed(0),
         sent(0),
-        send_partial(0),
-        dataIterator(data.end()){};
+        send_partial(0){};
 
         ~SendBuf(){};
 
@@ -64,21 +61,18 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             return ((ssize_t)max_data - (ssize_t)used_length);
         };
 
-        uint32_t off_front(){
-            uint32_t result = 0;
-            while(dataIterator != data.end()){
-                if (dataIterator->second.second != 0){
-                    result = (uint32_t)dataIterator->first;
-                    ++dataIterator;
-                    ++pos;
-                    if(std::distance(data.begin(), dataIterator) != pos){
-                        std::cout<<"postion error(distance:"<<std::distance(data.begin(), dataIterator)<<", pos"<<pos<<")"<<std::endl;
-                    }
-                    break;
+        /// Returns the lowest offset of data buffered.
+        uint64_t off_front() {
+            auto tmp_pos = pos;  
+            while (tmp_pos <= (send_index.size() - 1)){
+                auto b = send_index.at(tmp_pos);
+     
+                if(data[b].second != 0){
+                    record_off.push_back(tmp_pos);
+                    return b;
                 }
-                
+                tmp_pos += 1;
             }
-            return result;
         }
 
         /// Returns true if there is data to be written.
@@ -86,25 +80,17 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             return !data.empty();
         };
 
+
         void remove_element(uint32_t in_offset){
             data.erase(in_offset);
             if (auto search = data_copy.find(in_offset); search != data_copy.end()){
                 data_copy.erase(in_offset);
             }
-            dataIterator = data.begin();
-            pos = 0;
-            send_index.erase(std::remove(send_index.begin(), send_index.end(), in_offset), send_index.end());
-        }
-
-        bool check_loss(){
-            return send_index.empty();
         }
 
         void data_restore(uint32_t in_offset){
-            if (data[in_offset].second != 0){
-                data_copy[in_offset] = data[in_offset].second;
-                data[in_offset].second = 0;
-            } 
+            data_copy[in_offset] = data[in_offset].second;
+            data[in_offset].second = 0;
         }
 
         void acknowledege_and_drop(uint32_t in_offset, bool is_drop){
@@ -117,7 +103,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         void clear(){
             data.clear();
-            dataIterator = data.begin();
             pos = 0;
             off = 0;
             length = 0;
@@ -173,7 +158,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             pos = 0;
             length = 0;
             off = unsent_off;
-            dataIterator = data.begin();
+
             return unsent_len;
         };
  
@@ -189,10 +174,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 return 0;
             }
 
-            if(start_off == 0){
-                off = 0;
-            }
-
             int written_length_;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
@@ -201,16 +182,14 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 used_length += packet_len;
                 written_length_ += packet_len;
                 write_data_len -= packet_len;
+                send_index.push_back(off);
                 off += (uint64_t) packet_len;
                 if (write_data_len == 0){
                     break;
                 }
             }
 
-            if (start_off == 0){
-                dataIterator = data.begin();
-                pos = 0;
-            }
+            std::sort(send_index.begin(), send_index.end()); 
 
             return written_length_;
         }
@@ -218,15 +197,19 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         bool emit(struct iovec& out, size_t& out_len, uint32_t& out_off){
             bool stop = false;
             out_len = 0;
-            out_off = off_front();
-            while (ready()){ 
-                auto buf = data[out_off];
+            out_off = (uint32_t)off_front();
+            while (ready()){
+                if(pos >= send_index.size()){
+                    break;
+                }
+
+
+                auto buf = data[send_index.at(pos)];
 
                 // std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second:"<<buf.second<<std::endl;
 
                 if (buf.second == 0){
-                    ++dataIterator;
-                    ++pos;
+                    pos += 1;
                     continue;
                 }
                 
@@ -248,7 +231,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
                 out_len = buf.second;
 
-                send_index.push_back(out_off);
+                pos += 1;
+
                 if (partial) {
                     // We reached the maximum capacity, so end here.
                     break;
@@ -260,12 +244,17 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             //All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
                 stop = true;
+                pos = 0;
             }
             if (pos == data.size()){
                 stop = true;
+                pos = 0;
             }
-
+            
+            out_off += (uint32_t)out_len;
+            out_off = send_index.at(pos);
             if (stop){
+                remove_indexes(send_index, record_off);
                 sent = 0;
             }
             return stop;
@@ -274,12 +263,28 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         void recovery_data(){
             for (auto i : data_copy){
                 data[i.first].second = i.second;
+                send_index.push_back(i.first);
             }
             data_copy.clear();
+            std::sort(send_index.begin(), send_index.end()); 
         };
 
+        void remove_indexes(std::vector<uint64_t>& target, const std::vector<uint64_t>& indexes) {
+            std::vector<size_t> sorted_indexes = indexes;
+            std::sort(sorted_indexes.begin(), sorted_indexes.end(), std::greater<size_t>());
+
+            for (size_t index : sorted_indexes) {
+                if (index < target.size()) {
+                    target.erase(target.begin() + index); 
+                } else {
+                    // std::cerr << "Index " << index << " out of range." << std::endl;
+                }
+            }
+        };
 
     };
     
     
 }
+
+
