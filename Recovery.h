@@ -9,10 +9,11 @@ namespace dmludp{
 //  initial cwnd = min (10*MSS, max (2*MSS, 14600)) 
 const size_t INITIAL_WINDOW_PACKETS = 10;
 
-const size_t INI_WIN = 1350 * INITIAL_WINDOW_PACKETS;
-
-// const size_t PACKET_SIZE = 1200;
 const size_t PACKET_SIZE = 1350;
+
+const size_t INI_WIN = PACKET_SIZE * INITIAL_WINDOW_PACKETS;
+
+const size_t INI_SSTHREAD = PACKET_SIZE * 80;
 
 const double BETA = 0.7;
 
@@ -90,7 +91,7 @@ class Recovery{
     parital_allowed(INI_WIN),
     timeout_recovery(false),
     K(0.0),
-    ssthread(SIZE_MAX){
+    ssthread(INI_SSTHREAD){
         max_datagram_size = PACKET_SIZE;
         congestion_window = 0;
         last_cwnd = INI_WIN;
@@ -144,6 +145,9 @@ class Recovery{
 
     size_t cwnd(){
         if (timeout_recovery){
+            if (congestion_window / 2 > INI_WIN){
+                ssthread = congestion_window / 2;
+            }   
             congestion_window = INI_WIN;
             W_max = congestion_window;
             change_status(false);
@@ -172,7 +176,9 @@ class Recovery{
                 change_status(true);
             }
         }
-        
+        if (congestion_window < INI_WIN){
+            congestion_window = INI_WIN;
+        }
         set_recovery(false);
         parameter_reset();
         return congestion_window;

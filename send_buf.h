@@ -72,11 +72,13 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                     ++dataIterator;
                     ++pos;
                     if(std::distance(data.begin(), dataIterator) != pos){
-                        std::cout<<"postion error(distance:"<<std::distance(data.begin(), dataIterator)<<", pos"<<pos<<")"<<std::endl;
+                        std::cout<<"postion error(distance:"<<std::distance(data.begin(), dataIterator)<<", pos:"<<pos<<")"<<std::endl;
+                        _Exit(0);
                     }
                     break;
                 }
-                
+                ++dataIterator;
+                ++pos;
             }
             return result;
         }
@@ -218,7 +220,17 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         bool emit(struct iovec& out, size_t& out_len, uint32_t& out_off){
             bool stop = false;
             out_len = 0;
-            out_off = off_front();
+            auto tmp_off = off_front();
+            if (dataIterator != data.end()){
+                out_off = tmp_off;
+            }else{
+                stop = true;
+                out_off = 0;
+                out_len = 0;
+                return stop;
+            }
+            // out_off = off_front();
+
             while (ready()){ 
                 auto buf = data[out_off];
 
@@ -278,6 +290,12 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             data_copy.clear();
         };
 
+        void recovery_data2(uint64_t in_offset){
+            if (data_copy.find(in_offset) != data_copy.end() && data.find(in_offset) != data.end()){
+                data[in_offset].second = data_copy[in_offset];
+                data_copy.erase(in_offset);
+            }
+        }
 
     };
     

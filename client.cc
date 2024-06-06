@@ -150,9 +150,11 @@ int main() {
                     size_t elicit_len = 0;
                     while(true){
                         auto retval = recvmmsg(client_fd, msgs + receive_number, 500, 0, NULL);
+
                         if (receive_number == 0){
                             dmludp_update_receive_parameters(dmludp_connection);
                         }
+
                         if (retval == -1){
                             if (errno == EAGAIN) {
                                 break;
@@ -161,6 +163,7 @@ int main() {
                                 continue;
                             }
                         }
+
                         for (auto index = receive_number; index < retval + receive_number; index++){
                             auto read = msgs[index].msg_len;
                             if (read > 0){
@@ -189,21 +192,42 @@ int main() {
                                 else if (rv == 5){
                                 }
                             }
+
+                            if (index == elicit_index && has_elicit_packet){
+                                auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
+                                ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                                ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                            }
                         }
-                        receive_number+=retval;
+
+                        receive_number += retval;
+
+                        //// 
+                        // if(has_elicit_packet){
+                        //     auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
+                        //     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                        //     ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                        // }
+                        /////
                     }
 
-                    if(has_elicit_packet){
-                        auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
-                        ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
-                        ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
-                    }else{
-                        if(is_application){
-                            uint8_t ack[1500];
-                            auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                            auto sent_result = ::send(client_fd, ack, result, 0);
-                        }
+                    if (!has_elicit_packet && is_application){
+                        uint8_t ack[1500];
+                        auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                        auto sent_result = ::send(client_fd, ack, result, 0);
                     }
+
+                    // if(has_elicit_packet){
+                    //     auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
+                    //     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                    //     ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                    // }else{
+                    //     if(is_application){
+                    //         uint8_t ack[1500];
+                    //         auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                    //         auto sent_result = ::send(client_fd, ack, result, 0);
+                    //     }
+                    // }
 
                     for (auto index = 0; index < receive_number; index++){
                         auto rv = static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base)[0];
