@@ -291,7 +291,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         void recovery_data3(uint64_t end_offset){
             for (auto it = data_copy.begin(); it->first < end_offset; ){
-                data[*it].second = it->second;
+                data[it->first].second = it->second;
                 it = data_copy.erase(it);
             }
         }  

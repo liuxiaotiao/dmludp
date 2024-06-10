@@ -75,7 +75,7 @@ enum Recovery_Status{
     Partial_send,
     Timeout_send,
     Timout_info
-}
+};
 
 class sbuffer{
 public:
@@ -735,7 +735,7 @@ public:
         /*
         partial acknowledge will be regraded as loss, start cubic
         */
-        if (pktnum == last_elicit_ack_pktnum){
+        if (pkt_num == last_elicit_ack_pktnum){
             if (end_pkt != end_pn){
                 recovery_check = Recovery_Status::Partial_send;
             }else{
