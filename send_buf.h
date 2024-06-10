@@ -220,15 +220,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         bool emit(struct iovec& out, size_t& out_len, uint32_t& out_off){
             bool stop = false;
             out_len = 0;
-            auto tmp_off = off_front();
-            if (dataIterator != data.end()){
-                out_off = tmp_off;
-            }else{
-                stop = true;
-                out_off = 0;
-                out_len = 0;
-                return stop;
-            }
+            out_off = off_front();
             // out_off = off_front();
 
             while (ready()){ 
@@ -296,6 +288,13 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
                 data_copy.erase(in_offset);
             }
         }
+
+        void recovery_data3(uint64_t end_offset){
+            for (auto it = data_copy.begin(); it->first < end_offset; ){
+                data[*it].second = it->second;
+                it = data_copy.erase(it);
+            }
+        }  
 
     };
     

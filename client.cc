@@ -108,7 +108,7 @@ int main() {
         close(client_fd);
         return -1;
     }
-    ev.events = EPOLLIN;
+    ev.events = EPOLLIN | EPOLLOUT;
     ev.data.fd = client_fd;
 
     // 添加套接字到 epoll
@@ -237,7 +237,7 @@ int main() {
                         if(dmludp_conn_receive_complete(dmludp_connection)){
                             std::cout<<recv_time++<<" time receive complete"<<std::endl;
                             dmludp_conn_recv_reset(dmludp_connection);
-                            if (recv_time == 100){
+                            if (recv_time == 2){
                                 return 0;
                             }
                         }

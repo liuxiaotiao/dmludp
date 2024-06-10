@@ -70,13 +70,6 @@ struct RecvInfo {
     sockaddr_storage to;
 };
 
-enum Recovery_Status{
-    All_send,
-    Partial_send,
-    Timeout_send,
-    Timout_info
-}
-
 class sbuffer{
 public:
     uint8_t * src;
@@ -348,13 +341,15 @@ public:
 
     std::pair<uint64_t, uint64_t> send_range;
 
+    std::chrono::high_resolution_clock::time_point sent_timestamp;
+
     bool can_send;
 
     bool partial_send;
 
-    Recovery_Status recovery_check;
-
     size_t congestion_window;
+
+    // uint8_t single_acknowlege_time;
 
     ssize_t timeout_acknowledge_packet_number;
 
@@ -362,8 +357,6 @@ public:
     std::set<uint64_t> send_unack_packet_record;
 
     Packet_num_len last_elicit_ack_pktnum;
-
-    std::map<uint64_t, std::chrono::high_resolution_clock::time_point> packetpnum2timestamp;
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
     recv_count(0),
@@ -414,8 +407,7 @@ public:
     congestion_window(0),
     // single_acknowlege_time(0),
     timeout_acknowledge_packet_number(-1),
-    last_elicit_ack_pktnum(0),
-    recovery_check(Recovery_Status::All_send)
+    last_elicit_ack_pktnum(0)
     {};
 
     ~Connection(){
@@ -425,27 +417,11 @@ public:
     void initial_rtt() {
         auto arrive_time = std::chrono::high_resolution_clock::now();
         srtt = arrive_time - handshake;
-        // std::cout<<"Initial rtt:"<<std::chrono::duration<double, std::nano>(srtt).count();
+        std::cout<<"Initial rtt:"<<std::chrono::duration<double, std::nano>(srtt).count();
         rttvar = srtt / 2;
-        // std::cout<<", rttvar:"<<std::chrono::duration<double, std::nano>(rttvar).count();
+        std::cout<<", rttvar:"<<std::chrono::duration<double, std::nano>(rttvar).count();
         rto = srtt + 4 * rttvar;
-        // std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
-    }
-
-    void update_rtt2(std::chrono::high_resolution_clock::time_point tmp_handeshake){
-        auto arrive_time = std::chrono::high_resolution_clock::now();
-        rtt = arrive_time - tmp_handeshake;    
-        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
-        // std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count()<<std::endl;
-        auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
-        // std::cout<<"tmp_srtt:"<<tmp_srtt.count();
-        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
-        auto diff = srtt - rtt;
-        auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        // std::cout<<", tmp_rttvar:"<<tmp_rttvar.count();
-        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
-        // std::cout<<", new srtt:"<<srtt.count();
-        rto = srtt + 4 * rttvar;
+        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     }
 
     void update_rtt() {
@@ -468,17 +444,17 @@ public:
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;    
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
-        // std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count()<<std::endl;
+        std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count()<<std::endl;
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
-        // std::cout<<"tmp_srtt:"<<tmp_srtt.count();
+        std::cout<<"tmp_srtt:"<<tmp_srtt.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        // std::cout<<", tmp_rttvar:"<<tmp_rttvar.count();
+        std::cout<<", tmp_rttvar:"<<tmp_rttvar.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
-        // std::cout<<", new srtt:"<<srtt.count();
+        std::cout<<", new srtt:"<<srtt.count();
         rto = srtt + 4 * rttvar;
-        // std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
+        std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     };
 
     // Merge to intial_rtt
@@ -603,12 +579,8 @@ public:
             //     // Debug
             //     // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
             // }
-            if (recv_dic.find(pkt_offset) == recv_dic.end()){
-                rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-                recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            }
-            
-            // std::cout<<"receive buffer size:"<<rec_buffer.data.size()<<std::endl;
+            rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
+            std::cout<<"receive buffer size:"<<rec_buffer.data.size()<<std::endl;
                      
         }
 
@@ -659,7 +631,7 @@ public:
             if (recv_dic.find(off) != recv_dic.end()){
                 std::cout<<"[Error] same offset:"<<off<<std::endl;
                 // RRD.show();
-                // _Exit(0);
+                _Exit(0);
                 // receive_pktnum2offset.insert(std::make_pair(pn, off));
                 // // Debug
                 // recv_dic.insert(std::make_pair(off, pkt_priorty));
@@ -668,7 +640,7 @@ public:
                 // optimize to reduce copy time.
                 receive_pktnum2offset.insert(std::make_pair(pn, off));
                 // Debug
-                // recv_dic.insert(std::make_pair(off, pkt_priorty));
+                recv_dic.insert(std::make_pair(off, pkt_priorty));
             }
         }
         return result;
@@ -682,12 +654,6 @@ public:
         current_loop_min = current_loop_max + 1;
     }
 
-    /* 
-    1. If sender received lasted acknowledge packet,
-    it will recover all oldest unacknowledge data to data buffer 
-    even if the data have been received by receiver.
-    2. Adding left data buffer checking, when data buffer has drained, but data_copy buffer still has data.
-    */
     void process_acknowledge(uint8_t* src, size_t src_len){
         Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
         Acknowledge_time_len pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
@@ -704,12 +670,12 @@ public:
         uint64_t end_pn_check = send_range.second;
 
         bool is_last_ack = false;
-        // if (start_pn != start_pn_check || end_pn != end_pn_check){
-        //     // std::cout<<"start_pn:"<<start_pn<<", start_pn_check"<<start_pn_check;
-        //     // std::cout<<", end_pn"<<end_pn<<", end_pn_check"<<end_pn_check<<std::endl;
-        //     // std::cout<<"send_range has some error"<<std::endl;
-        //     is_last_ack = true;
-        // }
+        if (start_pn != start_pn_check && end_pn != end_pn_check){
+            std::cout<<"start_pn:"<<start_pn<<", start_pn_check"<<start_pn_check;
+            std::cout<<", end_pn"<<end_pn<<", end_pn_check"<<end_pn_check<<std::endl;
+            std::cout<<"send_range has some error"<<std::endl;
+            is_last_ack = true;
+        }
 
         for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
             auto check_offset = pktnum2offset[check_pn];
@@ -724,7 +690,7 @@ public:
             }else{
                 loss_check = true;
                 if (sent_dic.at(check_offset) != 0){
-                    // send_buffer.acknowledege_and_drop(check_offset, false);
+                    send_buffer.acknowledege_and_drop(check_offset, false);
                 }else{
                     // Send proactively low priority packet if it wasn't received by receiver.
                     send_buffer.acknowledege_and_drop(check_offset, true);
@@ -732,29 +698,16 @@ public:
             }
         }
 
-        /*
-        partial acknowledge will be regraded as loss, start cubic
-        */
-        if (pktnum == last_elicit_ack_pktnum){
-            if (end_pkt != end_pn){
-                recovery_check = Recovery_Status::Partial_send;
-            }else{
-                if (!loss_check){
-                    recovery_check = Recovery_Status::All_send;
-                    send_buffer.recovery_data3(start_pn_check);
-                }else{
-                    recovery_check = Recovery_Status::Partial_send;
-                }
-            }
-        }else{
-            // is_last_ack = true;
-            recovery_check = Recovery_Status::Timout_info;
-        }
+        // if (last_elicit_ack_pktnum == pkt_num && first_pkt <= start_pn && end_pkt == end_pn){
+        //     recovery_send_buffer();
+        //     send_unack_packet_record.clear();
+        //     std::cout<<"pkt_num:"<<pkt_num<<", first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
+        // }
 
 
         if (send_unack_packet_record.empty()){
             if (!on_timeout()){
-                recovery_check = Recovery_Status::All_send;
+                can_send = true;
                 recovery.update_win(true);
                 update_rtt();
                 send_pkt_duration.erase(pkt_num);
@@ -764,14 +717,15 @@ public:
         }else{
             if (pkt_ack_time == 1){
                 recovery.update_win(true, received_num);
-                // if (!is_last_ack){
-                //     can_send = true;
-                // }else{
-                //     can_send = false;
-                // }
+                if (!is_last_ack){
+                    can_send = true;
+                }else{
+                    can_send = false;
+                }
             }else{
                 recovery.update_win(false, received_num);
-                recovery_check = Recovery_Status::Partial_send;
+                partial_send = true;
+                can_send = false;
             }
         }
 
@@ -837,7 +791,6 @@ public:
 
     void set_send_time(){
         handshake = std::chrono::high_resolution_clock::now();
-        // packetpnum2timestamp[last_elicit_ack_pktnum] = handshake;
     }
     
     // Used to get pointer owner and length
@@ -928,7 +881,7 @@ public:
         std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-        // std::cout<<"on_time:"<< now_ns << " ns" <<std::endl;
+        std::cout<<"on_time:"<< now_ns << " ns" <<std::endl;
         if (handshake + duration < now){
             timeout_ = true;
         }else{
@@ -936,73 +889,6 @@ public:
         }
         return timeout_;
     }
-
-    // ssize_t check_status(){
-    //     /*
-    //     1. acknowledge within timer, no time out. can_send: true, timeout: false.
-    //     2. no acknowledge packet arrive, no time out. start preparing send_buffer. can_send: false, timeout: false.
-    //     3. partial acknowlege packet arrive, no time out. send equivalent packets and preparing send buffer. can
-    //     4. time out. timeout true
-    //     */
-    //     ssize_t result = 0;
-    //     if (on_timeout()){
-    //         if (can_send){
-    //             congestion_window = recovery.cwnd();
-    //             send_buffer.update_max_data(congestion_window);
-    //             if (data_buffer.at(current_buffer_pos).left > 0){
-    //                 data2buffer(data_buffer.at(current_buffer_pos));
-    //             }
-    //             result = 4;
-    //         }else{
-    //             if (partial_send){
-    //                 recovery.update_win(true, 1);
-    //                 congestion_window = recovery.cwnd()
-    //                 can_send = true;
-    //                 send_buffer.update_max_data(congestion_window);
-    //                 if (data_buffer.at(current_buffer_pos).left > 0){
-    //                     data2buffer(data_buffer.at(current_buffer_pos));
-    //                 }
-    //             }else{
-    //                 recovery.set_recovery(true);
-    //                 can_send = false;
-    //                 congestion_window = recovery.cwnd();
-    //                 send_buffer.update_max_data(congestion_window);
-    //                 if (data_buffer.at(current_buffer_pos).left > 0){
-    //                     data2buffer(data_buffer.at(current_buffer_pos));
-    //                 }
-    //                 for (auto x = send_unack_packet_record.begin(); x != send_unack_packet_record.end(); x++){
-    //                     if (pktnum2offset.find(*x) != pktnum2offset.end()){
-    //                         auto delete_offset = pktnum2offset[*x];
-    //                         send_buffer.acknowledege_and_drop(delete_offset, false);
-    //                     }
-    //                 }
-    //                 result = 5;
-    //             }
-                
-    //         }
-    //     }else{
-    //         if (can_send){
-    //             //TODO: set cwnd to send buffer
-    //             congestion_window = recovery.cwnd();
-    //             // std::cout<<"no timeout"<<", congestion_window:"<<congestion_window<<std::endl;
-    //             send_buffer.update_max_data(congestion_window);
-    //             if (data_buffer.at(current_buffer_pos).left > 0){
-    //                 data2buffer(data_buffer.at(current_buffer_pos));
-    //             }
-    //             result = 1;
-    //         }else{
-    //             if (partial_send){
-    //                 result = 2;
-    //                 data_preparation();
-    //             }else{
-    //                 data_preparation();
-    //                 result = 3;
-    //             }
-    //         }
-    //     }
-    //     // std::cout<<"check_status:"<<result<<std::endl;
-    //     return result;
-    // }
 
     ssize_t check_status(){
         /*
@@ -1013,24 +899,13 @@ public:
         */
         ssize_t result = 0;
         if (on_timeout()){
-            if (recovery_check == Recovery_Status::All_send){
+            if (can_send){
                 congestion_window = recovery.cwnd();
                 send_buffer.update_max_data(congestion_window);
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
                 result = 4;
-            }else if(recovery_check == Recovery_Status::Partial_send){
-                // Just recevied partial acknowledge, 
-                // congestion condition is processed as loss.
-                recovery.update_win(true, 1);
-                congestion_window = recovery.cwnd()
-                can_send = true;
-                send_buffer.update_max_data(congestion_window);
-                if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
-                result = 6;
             }else{
                 recovery.set_recovery(true);
                 can_send = false;
@@ -1045,30 +920,32 @@ public:
                         send_buffer.acknowledege_and_drop(delete_offset, false);
                     }
                 }
-                result = 5;    
+                result = 5;
             }
         }else{
-            if (recovery_check == Recovery_Status::All_send){
+            if (can_send){
                 //TODO: set cwnd to send buffer
                 congestion_window = recovery.cwnd();
-                // std::cout<<"no timeout"<<", congestion_window:"<<congestion_window<<std::endl;
+                std::cout<<"no timeout"<<", congestion_window:"<<congestion_window<<std::endl;
                 send_buffer.update_max_data(congestion_window);
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
                 result = 1;
-            }else if(recovery_check == Recovery_Status::Partial_send){
-                result = 2;
-                data_preparation();
             }else{
-                data_preparation();
-                result = 3;
+                if (partial_send){
+                    result = 2;
+                    data_preparation();
+                }else{
+                    data_preparation();
+                    result = 3;
+                }
             }
-            
         }
         // std::cout<<"check_status:"<<result<<std::endl;
         return result;
     }
+
 
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
@@ -1139,8 +1016,6 @@ public:
             written_len += out_len;
 
             send_unack_packet_record.insert(pn);
-            // All packet restore to copy buffer
-            send_buffer.acknowledege_and_drop(out_off, false);
 
             if (s_flag){     
                 stop_flag = true;
@@ -1191,6 +1066,7 @@ public:
         can_send = false;
         partial_send = false;
         set_handshake();
+        sent_timestamp = std::chrono::high_resolution_clock::now();
   	    return written_len;
     };
 
@@ -1205,21 +1081,13 @@ public:
 
         uint64_t start_pktnum = record2ack_pktnum[0];
 
-        // if (auto it = send_unack_packet_record.begin(); *it != start_pktnum){
-        //     start_pktnum = *it;
-        // }
+        if (auto it = send_unack_packet_record.begin(); *it != start_pktnum){
+            start_pktnum = *it;
+        }
         
         size_t sent_num = std::min(preparenum, MAX_ACK_NUM_PKTNUM);
 
         uint64_t end_pktnum = record2ack_pktnum[sent_num - 1];
-
-        // if (auto it = send_unack_packet_record.begin(); *it != start_pktnum){
-        //     start_pktnum = *it;
-        // }
-
-        for (auto it = send_unack_packet_record.begin(); end_pktnum - *it > MAX_ACK_NUM_PKTNUM; it++){
-            start_pktnum = *it;
-        }
 
         auto pn = elicit_acknowledege_packet_number;
         Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
@@ -1245,7 +1113,7 @@ public:
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         retransmission_ack[pn] = std::make_pair(wait_ack, now);
         send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
-        // std::cout<<"start:"<<start_pktnum<<", end:"<<end_pktnum<<std::endl;
+        std::cout<<"start:"<<start_pktnum<<", end:"<<end_pktnum<<std::endl;
         send_range = std::make_pair(start_pktnum, end_pktnum);
         // std::cout<<"retransmission_ack.size:"<<retransmission_ack.size()<<" send_pkt_duration.size:"<<send_pkt_duration.size()<<std::endl;
 
@@ -1469,7 +1337,7 @@ public:
     void set_handshake(){
         handshake = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
-        // std::cout << "send ts: " << now_ns << " ns" << std::endl;
+        std::cout << "send ts: " << now_ns << " ns" << std::endl;
     };
 
     double get_rtt() {

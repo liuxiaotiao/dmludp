@@ -228,7 +228,7 @@ int main() {
                                         dmludp_conn_clear_sent_once(dmludp_connection);
                                         // 输出执行时间
                                         std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                                        if (send_time == 100){
+                                        if (send_time == 2){
                                             return 0;
                                         } 
                                         start = std::chrono::high_resolution_clock::now();
@@ -311,7 +311,7 @@ int main() {
                         dmludp_conn_set_send_time(dmludp_connection);
                     }
 
-                    dmludp_conn_recovery(dmludp_connection);
+                    // dmludp_conn_recovery(dmludp_connection);
                     
                     if (has_error == 11 && (sent == need_to_send)){
                         dmludp_set_error(dmludp_connection, 0, 0);
