@@ -19,6 +19,7 @@
 #define MAX_EVENTS 10
 #define SERVER_IP "10.10.1.1"
 #define FILE_SIZE 104857600
+#define RECEIVE_TIME 2000
 
 int main() {
     int client_fd, epoll_fd;
@@ -238,7 +239,7 @@ int main() {
                         if(dmludp_conn_receive_complete(dmludp_connection)){
                             std::cout<<recv_time++<<" time receive complete"<<std::endl;
                             dmludp_conn_recv_reset(dmludp_connection);
-                            if (recv_time == 100){
+                            if (recv_time == RECEIVE_TIME){
                                 return 0;
                             }
                         }

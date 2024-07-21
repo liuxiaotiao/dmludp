@@ -18,6 +18,7 @@
 #define PORT 12355
 #define MAX_EVENTS 10
 #define CLIENT_IP "10.10.1.2"
+#define SEND_TIME 2000
 
 int main() {
     // std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);
@@ -232,7 +233,7 @@ int main() {
                                         dmludp_conn_clear_sent_once(dmludp_connection);
                                         // 输出执行时间
                                         std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                                        if (send_time == 2000){
+                                        if (send_time == SEND_TIME){
                                             return 0;
                                         } 
                                         start = std::chrono::high_resolution_clock::now();
@@ -263,7 +264,7 @@ int main() {
                             dmludp_conn_clear_sent_once(dmludp_connection);
                             // 输出执行时间
                             std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                            if (send_time == 2000){
+                            if (send_time == SEND_TIME){
                                 return 0;
                             } 
                         }
@@ -279,10 +280,10 @@ int main() {
                             return false;
                         
 			}
-		//	std::cout<<"get data"<<std::endl;
+                //	std::cout<<"get data"<<std::endl;
                     }
                     size_t start_index = 0;
-		  /*  auto ts1 = std::chrono::system_clock::now();
+                /*  auto ts1 = std::chrono::system_clock::now();
 
     // 转换为时间点从纪元开始的时间间隔
     auto duration1 = ts1.time_since_epoch();
