@@ -208,53 +208,6 @@ class Recovery{
         return congestion_window;
     }
 
-    // size_t cwnd(){
-    //     if (timeout_recovery){
-    //         if (congestion_window / 2 > INI_WIN){
-    //             ssthread = congestion_window / 2;
-    //         }   
-    //         congestion_window = INI_WIN;
-    //         W_max = congestion_window;
-    //         change_status(false);
-    //     }else{
-    //         if (no_loss == true){
-    //             if (is_slow_start){
-    //                 if (congestion_window < ssthread){
-    //                     if (congestion_window == 0){
-    //                         congestion_window = INI_WIN;
-    //                     }else{
-    //                         congestion_window *= 2;
-    //                     }     
-    //                 }else{
-    //                     congestion_window += PACKET_SIZE;
-    //                 }
-    //             }
-
-    //             if (is_congestion){
-    //                 congestion_window += C * std::pow(cubic_time - K, 3.0) + W_max;
-    //                 cubic_time++;
-    //             }
-    //             W_max = congestion_window;
-    //         }else{
-    //             congestion_window *= BETA;
-    //             K = std::cbrt(W_max * BETA / C);
-    //             cubic_time = 0;
-    //             change_status(true);
-    //         }
-    //     }
-    //     if (congestion_window < INI_WIN){
-    //         congestion_window = INI_WIN;
-    //     }
-
-    //     if (congestion_window == INI_WIN){
-    //         change_status(false);
-    //     }
-    //     set_recovery(false);
-    //     parameter_reset();
-    //     return congestion_window;
-    // }
-
-
     size_t cwnd_available()  {
         return cwnd_increment;
     };

@@ -18,6 +18,7 @@
 #define PORT 12356
 #define MAX_EVENTS 10
 #define SERVER_IP "10.10.1.1"
+#define FILE_SIZE 104857600
 
 int main() {
     int client_fd, epoll_fd;
@@ -118,7 +119,7 @@ int main() {
         return -1;
     }
     dmludp_conn_recv_reset(dmludp_connection);
-    dmludp_conn_rx_len(dmludp_connection, 104857600);
+    dmludp_conn_rx_len(dmludp_connection, FILE_SIZE);
     size_t recv_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
