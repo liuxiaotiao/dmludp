@@ -7,13 +7,13 @@ namespace dmludp{
 
 // Congestion Control
 //  initial cwnd = min (10*MSS, max (2*MSS, 14600)) 
-const size_t INITIAL_WINDOW_PACKETS = 10;
+const size_t INITIAL_WINDOW_PACKETS = 2;
 
-const size_t PACKET_SIZE = 1350;
+const size_t PACKET_SIZE =8900;
 
 const size_t INI_WIN = PACKET_SIZE * INITIAL_WINDOW_PACKETS;
 
-const size_t INI_SSTHREAD = PACKET_SIZE * 80;
+const size_t INI_SSTHREAD = PACKET_SIZE * 40;
 
 const double BETA = 0.7;
 
@@ -128,8 +128,8 @@ class Recovery{
                 no_loss = true;
                 timeout_recovery = true;
             }else{
-                timeout_recovery = true;
                 no_loss = false;
+                timeout_recovery = true;
             }
         }
     }
@@ -143,6 +143,23 @@ class Recovery{
         timeout_recovery = recovery_signal;
     };
 
+    size_t cwnd_expect(){
+        ssize_t expect_cwnd_ = INI_WIN;
+        if(is_slow_start){
+            if (congestion_window < ssthread){
+		    expect_cwnd_ = congestion_window * 2;
+            }else{
+                expect_cwnd_ = congestion_window + PACKET_SIZE;
+            }
+        }else{
+            expect_cwnd_ = C * std::pow(cubic_time - K, 3.0) + W_last_max;
+        }
+        if (expect_cwnd_ < INI_WIN){
+            expect_cwnd_ = INI_WIN;
+        }
+        return expect_cwnd_;
+    }
+
     size_t cwnd(){
         if (timeout_recovery){
             if (congestion_window / 2 > INI_WIN){
@@ -152,7 +169,7 @@ class Recovery{
             W_max = congestion_window;
             change_status(false);
         }else{
-            if (no_loss = true){
+            if (no_loss == true){
                 if (is_slow_start){
                     if (congestion_window < ssthread){
                         if (congestion_window == 0){
@@ -166,23 +183,76 @@ class Recovery{
                 }
 
                 if (is_congestion){
-                    congestion_window += C * std::pow(cubic_time - K, 3.0) + W_max;
-                    cubic_time++;
+                    congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_last_max;
                 }
                 W_max = congestion_window;
+                
             }else{
-                congestion_window *= BETA;
+                // congestion_window *= BETA;
                 K = std::cbrt(W_max * BETA / C);
+                cubic_time = 1;
+                congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
+                W_last_max = W_max;
                 change_status(true);
             }
         }
         if (congestion_window < INI_WIN){
             congestion_window = INI_WIN;
         }
+
+        if (congestion_window == INI_WIN){
+            change_status(false);
+        }
         set_recovery(false);
         parameter_reset();
         return congestion_window;
     }
+
+    // size_t cwnd(){
+    //     if (timeout_recovery){
+    //         if (congestion_window / 2 > INI_WIN){
+    //             ssthread = congestion_window / 2;
+    //         }   
+    //         congestion_window = INI_WIN;
+    //         W_max = congestion_window;
+    //         change_status(false);
+    //     }else{
+    //         if (no_loss == true){
+    //             if (is_slow_start){
+    //                 if (congestion_window < ssthread){
+    //                     if (congestion_window == 0){
+    //                         congestion_window = INI_WIN;
+    //                     }else{
+    //                         congestion_window *= 2;
+    //                     }     
+    //                 }else{
+    //                     congestion_window += PACKET_SIZE;
+    //                 }
+    //             }
+
+    //             if (is_congestion){
+    //                 congestion_window += C * std::pow(cubic_time - K, 3.0) + W_max;
+    //                 cubic_time++;
+    //             }
+    //             W_max = congestion_window;
+    //         }else{
+    //             congestion_window *= BETA;
+    //             K = std::cbrt(W_max * BETA / C);
+    //             cubic_time = 0;
+    //             change_status(true);
+    //         }
+    //     }
+    //     if (congestion_window < INI_WIN){
+    //         congestion_window = INI_WIN;
+    //     }
+
+    //     if (congestion_window == INI_WIN){
+    //         change_status(false);
+    //     }
+    //     set_recovery(false);
+    //     parameter_reset();
+    //     return congestion_window;
+    // }
 
 
     size_t cwnd_available()  {

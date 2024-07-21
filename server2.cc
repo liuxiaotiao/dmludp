@@ -15,7 +15,7 @@
 #include <vector>
 #include <cstdint>  // 包含 uint8_t 的定义
 #include <arpa/inet.h>
-#define PORT 12356
+#define PORT 12355
 #define MAX_EVENTS 10
 #define CLIENT_IP "10.10.1.2"
 
@@ -87,8 +87,8 @@ int main() {
 
     bool is_server = true;
 
-    uint8_t out[1500];
-    uint8_t buffer[1500];
+    uint8_t out[9000];
+    uint8_t buffer[9000];
 
     auto dmludp_config = dmludp_config_new();
     auto dmludp_connection =  dmludp_accept(localAddr, peerAddr, *dmludp_config);
@@ -148,7 +148,7 @@ int main() {
     }
     struct mmsghdr msgs[100];
     struct iovec iovecs[100];
-    uint8_t bufs[100][1500];
+    uint8_t bufs[100][9000];
 
     for (int i = 0; i < 100; i++) {
         iovecs[i].iov_base = bufs[i];
@@ -200,19 +200,23 @@ int main() {
                         for (auto index = 0; index < retval; index++){
                             auto read = msgs[index].msg_len;
                             if (read > 0){
+				    /*for(auto id = 0; id<read;id++){
+					    std::cout<<(int)(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base))[id]<<" ";
+				    }
+				    std::cout<<std::endl;*/
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                                 uint32_t offset;
                                 uint64_t pkt_num;
                                 auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
                                 // Elicit ack
                                 if(rv == 4){
-                                    uint8_t out[1500];
+                                    uint8_t out[9000];
                                     ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                                     ssize_t socketwrite = ::send(server_fd, out, dmludpwrite, 0);
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.
-                                    uint8_t out[1500];
+                                    uint8_t out[9000];
                                     auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
                                     ssize_t socket_write = ::send(server_fd, out, stopsize, 0);
                                     break;
@@ -228,7 +232,7 @@ int main() {
                                         dmludp_conn_clear_sent_once(dmludp_connection);
                                         // 输出执行时间
                                         std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                                        if (send_time == 2){
+                                        if (send_time == 2000){
                                             return 0;
                                         } 
                                         start = std::chrono::high_resolution_clock::now();
@@ -259,12 +263,12 @@ int main() {
                             dmludp_conn_clear_sent_once(dmludp_connection);
                             // 输出执行时间
                             std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                            if (send_time == 2){
+                            if (send_time == 2000){
                                 return 0;
                             } 
                         }
                         
-
+			
                         start = std::chrono::high_resolution_clock::now();
                         std::array<struct iovec, 1> siov;
                         siov[0].iov_base = data.data();
@@ -273,86 +277,79 @@ int main() {
                         first_check = false;
                         if (!w2dmludp){
                             return false;
-                        }
+                        
+			}
+		//	std::cout<<"get data"<<std::endl;
                     }
-                    auto result = dmludp_conn_check_status(dmludp_connection);
-                    auto has_error = dmludp_get_dmludp_error(dmludp_connection);
-                    if (has_error == 0){
-                        if (result == 3){
-                            continue;
-                        }
-                    }
+                    size_t start_index = 0;
+		  /*  auto ts1 = std::chrono::system_clock::now();
 
-                    size_t sent = 0;
-                    
-                    ssize_t wlen = 0;
-                    size_t need_to_send = 0;
-                    size_t before_error_sent = 0;
-                    bool is_partial = false;
-                    if (has_error == 0){
-                        if (result == 2){
-                            // process partial sending occurs EAGAIN, and next time convert to acked.
-                            wlen = dmludp_data_send_partial_mmsg(dmludp_connection, hdrs, messages, iovecs_);
-                            is_partial = true;
-                        }else if(result == 3){
-                            continue;
+    // 转换为时间点从纪元开始的时间间隔
+    auto duration1 = ts1.time_since_epoch();
+
+    // 转换为毫秒
+    auto millis1 = std::chrono::duration_cast<std::chrono::nanoseconds>(duration1).count();*/
+
+                    auto send_num = dmludp_connection_send_messages(dmludp_connection, start_index);
+		    if (send_num == 0){
+                        continue;
+                    }
+                    auto message_hdr = dmludp_connection_get_mmsghdr(dmludp_connection);
+//		    std::cout<<"start_index:"<<start_index<<", send_num:"<<send_num<<std::endl;
+                    auto sent = 0;
+                    size_t dmludp_error = 0;
+/*auto ts2 = std::chrono::system_clock::now();
+
+    // 转换为时间点从纪元开始的时间间隔
+    auto duration2 = ts2.time_since_epoch();
+
+    // 转换为毫秒
+    auto millis2 = std::chrono::duration_cast<std::chrono::nanoseconds>(duration2).count();
+    std::cout<<"diff:"<<(millis2-millis1)<<" ns"<<std::endl;*/
+                    while(send_num > sent){
+                        auto retval = sendmmsg(server_fd, message_hdr.data() + start_index + sent, send_num - sent, 0);
+                        if (retval == -1){
+                        // Date: solve data cannot send out one time.
+                        // Move errno == EINTR out of while(1)
+                            if (errno == EINTR){
+                                continue;
+                            }
+
+                            if (errno == EAGAIN){
+                                dmludp_error = EAGAIN;
+                                // std::cout<<"[EAGAIN] "<<sent<<std::endl;
+                            }
+                            break;
                         }
-                        else{
-                            wlen = dmludp_data_send_mmsg(dmludp_connection, hdrs, messages, iovecs_, out_ack);
-                        }
-                        if (messages.size() == 0){
-                            continue;
-                        }
-                        need_to_send = messages.size();
+                        sent += retval;
+                    }
+		/*   std::cout<<"server sendmmsg"<<std::endl;
+		    std::cout<<"start_index:"<<start_index<<", sent:"<<sent<<std::endl;
+for (auto k =start_index; k - start_index < sent;k++) {
+            for (size_t i = 0; i < message_hdr.at(k).msg_hdr.msg_iovlen; ++i) {*/
+                /*if (message_hdr.at(k).msg_hdr.msg_iov[i].iov_len == 26){
+                        std::cout<<"k:"<<k<<" ";
+                    for(auto j = 0; j < 26; j++){
+                        std::cout << (int)(static_cast<uint8_t*>(message_hdr.at(k).msg_hdr.msg_iov[i].iov_base))[j]<< " ";
+                    }
+                    std::cout<<std::endl;
+                }*/
+		/*if(i%2 ==0){
+			for(auto j = 0; j < message_hdr.at(k).msg_hdr.msg_iov[i].iov_len; j++){
+                        std::cout << (int)(static_cast<uint8_t*>(message_hdr.at(k).msg_hdr.msg_iov[i].iov_base))[j]<< " ";
+                    }
+                    std::cout<<std::endl;
+		}
+            }
+        }
+std::cout<<"server end"<<std::endl;*/
+                    if (dmludp_error == EAGAIN){
+			   //std::cout<<"EAGAIN, sent:"<<sent<<std::endl;
+                        dmludp_connection_send_message_complete(dmludp_connection, dmludp_error, sent);
                     }else{
-                        need_to_send = messages.size() - dmludp_get_error_sent(dmludp_connection);
-                        before_error_sent = dmludp_get_error_sent(dmludp_connection);
+                        dmludp_connection_send_message_complete(dmludp_connection);
                     }   
-
-                    if (wlen != 0){
-                        while(need_to_send > sent){
-                            auto retval = sendmmsg(server_fd, messages.data() + sent + before_error_sent, messages.size() - sent - before_error_sent, 0);
-
-                            if (retval == -1){
-                            // Date: solve data cannot send out one time.
-                            // Move errno == EINTR out of while(1)
-                                if (errno == EINTR){
-                                    continue;
-                                }
-
-                                if (errno == EAGAIN){
-                                    dmludp_set_error(dmludp_connection, EAGAIN, sent);
-                                    // std::cout<<"[EAGAIN] "<<sent<<std::endl;
-                                }
-                                break;
-                            }
-                            sent += retval;
-                        }
-                    }
-                   
-                    if (wlen != 0){
-                        if (need_to_send != sent){
-                            continue;
-                        }else{
-                            if (!is_partial){
-                                dmludp_conn_set_send_time(dmludp_connection);
-                            }
-                        }
-                    }else{
-                        dmludp_conn_set_send_time(dmludp_connection);
-                    }
-                   
-
-                    //dmludp_conn_recovery(dmludp_connection);
-                    
-                    if (has_error == 11 && (sent == need_to_send)){
-                        dmludp_set_error(dmludp_connection, 0, 0);
-                    }
-
-                    hdrs.clear();
-                    messages.clear();
-                    iovecs_.clear();
-                    out_ack.clear();
+		    //std::cout<<"dmludp_connection_send_message_complete"<<std::endl;                    
 
                 }
             }

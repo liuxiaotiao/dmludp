@@ -108,7 +108,7 @@ int main() {
         close(client_fd);
         return -1;
     }
-    ev.events = EPOLLIN | EPOLLOUT;
+    ev.events = EPOLLIN;
     ev.data.fd = client_fd;
 
     // 添加套接字到 epoll
@@ -118,7 +118,7 @@ int main() {
         return -1;
     }
     dmludp_conn_recv_reset(dmludp_connection);
-    dmludp_conn_rx_len(dmludp_connection, 1048576);
+    dmludp_conn_rx_len(dmludp_connection, 104857600);
     size_t recv_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
@@ -237,7 +237,7 @@ int main() {
                         if(dmludp_conn_receive_complete(dmludp_connection)){
                             std::cout<<recv_time++<<" time receive complete"<<std::endl;
                             dmludp_conn_recv_reset(dmludp_connection);
-                            if (recv_time == 2){
+                            if (recv_time == 100){
                                 return 0;
                             }
                         }

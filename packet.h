@@ -49,10 +49,11 @@ using Packet_len = uint16_t;
         /// Fin
         Fin = 0x07,
 
-        // StartACK
         StartAck = 0x08,
 
-        Unknown = 0x09,
+        FastAck = 0x09,
+
+        Unknown = 0x10,
     };
 
 // Avoid memory alignment
@@ -194,10 +195,6 @@ using Packet_len = uint16_t;
         void reset(){
             next_pkt_num = 0;
         };
-
-        uint64_t currentpktnum(){
-            return (next_pkt_num - 1);
-        }
     };
 }
 #pragma pack(pop)

@@ -8,6 +8,9 @@ acknowledge time(1 byte)
 difference(1 byte)
 pkt_length(2 bytes)
 
-Elicit packet will be just used to timeout
-
-There is some error on EPOLLIN register.
+Add partial send_mmsg
+others follows v2.1
+no longer use map to store send_buf
+use deque store it again
+update: 
+merge mmsghdr to connection

@@ -6,24 +6,22 @@
 #include <unordered_set>
 #include <stdlib.h>
 #include <numeric>
+#include <tuple>
 
 namespace dmludp{
-const size_t SEND_BUFFER_SIZE = 1350;
+const size_t SEND_BUFFER_SIZE = 8900;
 
-const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
+const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
     class SendBuf{
         public:
-        // Date: 8th Jan, 2024
-        // Data pair store offset 
-        std::map<uint64_t, std::pair<uint8_t*, uint64_t>> data;
+        std::deque<std::tuple<uint64_t, uint8_t*, uint64_t>> data;
 
-        // data_copy used to store last round unsent data.
-        std::unordered_map<uint64_t, uint64_t> data_copy;
-
-        std::map<uint64_t, std::pair<uint8_t*, uint64_t>>::iterator dataIterator;
+        std::deque<std::tuple<uint64_t, uint8_t*, uint64_t>> data_copy;
 
         size_t pos;
+
+        size_t last_pos;
 
         uint64_t off;
 
@@ -33,18 +31,20 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
         size_t used_length;
 
-        std::vector<uint64_t> send_index;
-
         uint64_t removed;
 
-        size_t sent;
+        ssize_t sent;
 
         // scenario: left not received data is more than cwnd.
-        ssize_t send_partial;
-
-        std::unordered_set<uint64_t> recv_count;
 
         std::vector<uint64_t> record_off;
+
+        std::set<uint64_t> received_offset;
+
+        std::set<uint64_t> received_check;
+
+        size_t total_bytes;
+	ssize_t written_bytes;
 
         SendBuf():
         pos(0),
@@ -54,31 +54,78 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
         used_length(0),
         removed(0),
         sent(0),
-        send_partial(0),
-        dataIterator(data.end()){};
+        last_pos(0),
+        total_bytes(0),
+	    written_bytes(0){};
 
         ~SendBuf(){};
-
+/*void data_clear(){
+            auto i = 0;
+            while(i < data.size()){
+                auto check = received_offset.find(std::get<0>(data[i]));
+                if (check != received_offset.end()){
+                    data.erase(data.begin() + i);
+                }else{
+                    i++;
+                }
+            }
+        }*/
         ssize_t cap(){
             used_length = len();
             return ((ssize_t)max_data - (ssize_t)used_length);
         };
-
-        uint32_t off_front(){
-            uint32_t result = 0;
-            while(dataIterator != data.end()){
-                if (dataIterator->second.second != 0){
-                    result = (uint32_t)dataIterator->first;
-                    ++dataIterator;
-                    ++pos;
-                    if(std::distance(data.begin(), dataIterator) != pos){
-                        std::cout<<"postion error(distance:"<<std::distance(data.begin(), dataIterator)<<", pos:"<<pos<<")"<<std::endl;
-                        _Exit(0);
-                    }
-                    break;
+	void data_clear(){
+            ssize_t tmp_pos = pos;
+            while(tmp_pos >= 0){
+                auto check = received_offset.find(std::get<0>(data.at(tmp_pos)));
+                if(check == received_offset.end()){
+                    tmp_pos--;
+                }else{
+		//	std::cout<<"Send buffer receive offset:"<<std::get<0>(data.at(tmp_pos))<<std::endl;
+                    data.erase(data.begin() + tmp_pos);
+                    pos--;
+		   // std::cout<<"pos--:"<<pos<<std::endl;
+		    tmp_pos--;
                 }
-                ++dataIterator;
-                ++pos;
+            }
+        }
+	 bool written_complete(){
+            return written_bytes == total_bytes;
+        }
+	ssize_t off_front(){
+            ssize_t result = -1;
+	    //std::cout<<"data.size():"<<data.size()<<std::endl;
+            while(pos < data.size()){
+		   // std::cout<<"pos:"<<pos<<std::endl;
+                if (received_offset.empty()){
+                    result = std::get<0>(data[pos]);
+		    //std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+//		            std::cout<<"result:"<<result<<", len:"<<std::get<2>(data[pos])<<std::endl;
+                    last_pos = pos;
+                    pos++;
+                    break;
+                }else{
+                    // if (std::get<0>(data[pos]) > *received_offset.rbegin()){
+                    //     result = std::get<0>(data[pos]);
+                    //     last_pos = pos;
+                    //     pos++;
+                    //     break;
+                    // }else{
+                        auto check = received_offset.find(std::get<0>(data[pos]));
+//			std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+                        if(check == received_offset.end()){
+                            result = std::get<0>(data[pos]);
+                       // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+			    last_pos = pos;
+                            pos++;
+                            break;
+                        }else{
+                            data.erase(data.begin() + pos);
+			    //std::cout<<"erase size:"<<data.size()<<std::endl;
+                        }
+                    //}
+                    
+                }
             }
             return result;
         }
@@ -88,41 +135,35 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             return !data.empty();
         };
 
-        void remove_element(uint32_t in_offset){
-            data.erase(in_offset);
-            if (auto search = data_copy.find(in_offset); search != data_copy.end()){
-                data_copy.erase(in_offset);
+        // After sending. Move data to data_copy
+        void data_restore(){
+            while(true){
+                data_copy.push_back(std::move(data[last_pos]));
+                data.erase(data.begin() + last_pos);
+                if (last_pos == 0){
+                    break;
+                }
+                last_pos--;
             }
-            dataIterator = data.begin();
-            pos = 0;
-            send_index.erase(std::remove(send_index.begin(), send_index.end(), in_offset), send_index.end());
-        }
-
-        bool check_loss(){
-            return send_index.empty();
-        }
-
-        void data_restore(uint32_t in_offset){
-            if (data[in_offset].second != 0){
-                data_copy[in_offset] = data[in_offset].second;
-                data[in_offset].second = 0;
-            } 
         }
 
         void acknowledege_and_drop(uint32_t in_offset, bool is_drop){
             if (is_drop){
-                remove_element(in_offset);
-            }else{
-                data_restore(in_offset);
+                received_offset.insert(in_offset);
+                received_check.insert(in_offset);
+		//std::cout<<"received_offset.size:"<<received_offset.size()<<", received_check.size:"<<received_check.size()<<std::endl;
             }
         }
 
         void clear(){
-            data.clear();
-            dataIterator = data.begin();
+		    data.clear();
+            last_pos = 0;
             pos = 0;
             off = 0;
             length = 0;
+            received_offset.clear();
+            received_check.clear();
+	        written_bytes = 0;
         };
 
         /// Returns the largest offset of data buffered.
@@ -148,7 +189,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
             int length_accumulate = std::accumulate(data.begin(), data.end(), 0,
                 [](int acc, const auto& x) {
-                    return acc + x.second.second;
+                    return acc + std::get<2>(x);
                 });
             
             return length_accumulate;
@@ -175,7 +216,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
             pos = 0;
             length = 0;
             off = unsent_off;
-            dataIterator = data.begin();
             return unsent_len;
         };
  
@@ -193,66 +233,97 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
             if(start_off == 0){
                 off = 0;
+                total_bytes = write_data_len;
             }
 
             int written_length_;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
-                data[off] = std::make_pair(src + start_off + written_length_, packet_len);
+                // data[off] = std::make_pair(src + start_off + written_length_, packet_len);
+                // auto meta_ = std::make_pair(src + start_off + written_length_, packet_len);
+                // data.push_back(std::make_pair(off, meta_));
+                // std::cout<<"send buffer off:"<<off<<std::endl;
+                data.emplace_back(off, src + start_off + written_length_, (uint64_t)packet_len);
                 length += (uint64_t) packet_len;
                 used_length += packet_len;
                 written_length_ += packet_len;
                 write_data_len -= packet_len;
                 off += (uint64_t) packet_len;
+		        written_bytes += packet_len;
                 if (write_data_len == 0){
                     break;
                 }
             }
 
             if (start_off == 0){
-                dataIterator = data.begin();
                 pos = 0;
+                last_pos = 0;
             }
 
             return written_length_;
         }
 
-        bool emit(struct iovec& out, size_t& out_len, uint32_t& out_off){
+        bool emit(struct iovec& out, ssize_t& out_len, uint32_t& out_off){
             bool stop = false;
-            out_len = 0;
-            out_off = off_front();
-            // out_off = off_front();
-
+            
             while (ready()){ 
-                auto buf = data[out_off];
+                out_len = 0;
+                auto tmp_off = off_front();
+                if (tmp_off == -1){
+                    out_len = -1;
+                    stop = true;
+                    break;
+                }
+                out_off = tmp_off;
+                auto buf = data[last_pos];
 
                 // std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second:"<<buf.second<<std::endl;
-
-                if (buf.second == 0){
-                    ++dataIterator;
-                    ++pos;
-                    continue;
-                }
                 
                 size_t buf_len = 0;
                 
                 bool partial;
-                if(buf.second <= MIN_SENDBUF_INITIAL_LEN){
+                if(std::get<2>(buf) <= MIN_SENDBUF_INITIAL_LEN){
                     partial = true;
                 }else{
                     partial = false;
                 }
-
+                out_len = std::get<2>(buf);
+                /* if (out_len == 0){
+                    if (used_length != 0){
+                        if (total_bytes - out_off >= MIN_SENDBUF_INITIAL_LEN){
+                                out_len = MIN_SENDBUF_INITIAL_LEN;
+                            }else{
+                                out_len = total_bytes - out_off + 1;
+                            }
+                    }
+                }*/
                 // Copy data to the output buffer.
-                out.iov_base = (void *)(buf.first);
-                out.iov_len = buf.second;
+                out.iov_base = (void *)(std::get<1>(buf));
+                out.iov_len = out_len;
 
-                length -= (uint64_t)(buf.second);
-                used_length -= (buf.second);
+                length -= (uint64_t)(out_len);
+                used_length -= (out_len);
 
-                out_len = buf.second;
+                // out_len = buf.second.second;
 
-                send_index.push_back(out_off);
+                //out_len = std::get<2>(buf);
+
+ //               std::cout<<"out_off:"<<out_off<<", out_len"<<out_len<<", data.len():"<<data.size()<<", pos:"<<pos<<std::endl;
+
+                // if (out_len != MIN_SENDBUF_INITIAL_LEN){
+                //     if (pos == 0){
+                //         if (out_off == 0){
+                //             out_len = 0;
+                //         }else{
+                //             if (total_bytes - out_off >= MIN_SENDBUF_INITIAL_LEN){
+                //                 out_len = MIN_SENDBUF_INITIAL_LEN;
+                //             }else{
+                //                 out_len = total_bytes - out_off + 1;
+                //             }   
+                //         }
+                //     }
+                // }
+
                 if (partial) {
                     // We reached the maximum capacity, so end here.
                     break;
@@ -260,43 +331,82 @@ const size_t MIN_SENDBUF_INITIAL_LEN = 1350;
 
             }
             sent += out_len;
-
+	    //std::cout<<"out_len:"<<out_len<<std::endl;
             //All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
+		   // std::cout<<"sent >= max_data, sent:"<<sent<<", max_data:"<<max_data<<std::endl;
                 stop = true;
             }
             if (pos == data.size()){
+		   // std::cout<<"pos:"<<pos<<", data.size():"<<data.size()<<std::endl;
+                stop = true;
+		/*if (!data.empty()){
+                    pos = 0;
+                }else{
+                    stop = true;
+                }*/
+            }
+
+            if (data.empty()){
+		   // std::cout<<"data.empty()"<<std::endl;
                 stop = true;
             }
 
             if (stop){
                 sent = 0;
+	//	pos = 0;
+		//std::cout<<"sent:"<<sent<<std::endl;
             }
             return stop;
         };
 
+        // call recovery_data when timeout or normal send().
         void recovery_data(){
-            for (auto i : data_copy){
-                data[i.first].second = i.second;
+            if (data_copy.empty()){
+                reset_iterator();
+                received_check.clear();
+                return;
+            }
+
+            for(auto i = 0; i < data_copy.size(); i++){
+                if(received_check.find(std::get<0>(data_copy[i])) != received_check.end()){
+                    continue;
+                }
+                if (3 * max_data > data.size()){
+                    data.push_back(std::move(data_copy[i]));
+                }else{
+                    data.insert(data.begin() + 3 * max_data + i, std::move(data_copy[i]));
+                }
             }
             data_copy.clear();
+            received_check.clear();
         };
 
-        void recovery_data2(uint64_t in_offset){
-            if (data_copy.find(in_offset) != data_copy.end() && data.find(in_offset) != data.end()){
-                data[in_offset].second = data_copy[in_offset];
-                data_copy.erase(in_offset);
+        void manage_recovery(){
+            recovery_data();
+            data_restore();
+            reset_iterator();
+        };
+        
+        void reset_iterator(){
+            pos = 0;
+        };
+
+        // Remove received data from sending buffer.
+        void remove_received_from_buffer(){
+            while(ready()){
+                auto tmp_off = off_front();
+                if(pos == data.size()){
+                    break;
+                }
             }
+            reset_iterator();
         }
 
-        void recovery_data3(uint64_t end_offset){
-            for (auto it = data_copy.begin(); it->first < end_offset; ){
-                data[it->first].second = it->second;
-                it = data_copy.erase(it);
-            }
-        }  
-
     };
+
+    
     
     
 }
+

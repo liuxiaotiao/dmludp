@@ -122,6 +122,21 @@ inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn,
     return conn->send_mmsg(hdrs, messages, iovecs, out_ack);
 }
 
+// inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
+//     std::vector<std::shared_ptr<Header>> &hdrs, 
+//     std::vector<struct msghdr> &messages, 
+//     std::vector<struct iovec> &iovecs,
+//     std::vector<std::vector<uint8_t>> &out_ack){
+//     return conn->send_msg(hdrs, messages, iovecs, out_ack);
+// }
+
+inline ssize_t dmludp_data_send_partial_mmsg(std::shared_ptr<Connection> conn, 
+    std::vector<std::shared_ptr<Header>> &hdrs, 
+    std::vector<struct mmsghdr> &messages, 
+    std::vector<struct iovec> &iovecs){
+    return conn->send_partial_mmsg(hdrs, messages, iovecs);
+}
+
 inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
     return conn->transmission_complete();
 }
@@ -278,4 +293,16 @@ inline void dmludp_conn_reset_rx_len(std::shared_ptr<Connection> conn){
 
 inline ssize_t dmludp_conn_check_status(std::shared_ptr<Connection> conn){
     return conn->check_status();
+}
+
+inline std::vector<struct mmsghdr> dmludp_connection_get_mmsghdr(std::shared_ptr<Connection> conn){
+    return conn->get_mmsghdr();
+}
+
+inline ssize_t dmludp_connection_send_messages(std::shared_ptr<Connection> conn, size_t &start_){
+    return conn->send_message(start_);
+}
+
+inline void dmludp_connection_send_message_complete(std::shared_ptr<Connection> conn, size_t err_ = 0, size_t error_sent = 0){
+    conn->send_message_complete(err_, error_sent);
 }
