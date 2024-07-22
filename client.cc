@@ -68,8 +68,8 @@ int main() {
 
     bool is_server = false;
 
-    uint8_t out[1500];
-    uint8_t buffer[1500];
+    uint8_t out[9000];
+    uint8_t buffer[9000];
     auto dmludp_config = dmludp_config_new();
     auto dmludp_connection = dmludp_connect(localAddr, peerAddr, *dmludp_config);
     dmludp_config_free(dmludp_config);
@@ -178,6 +178,10 @@ int main() {
                                 if(rv == 4){
                                     has_elicit_packet = true;
                                     elicit_index = index;
+                                    for (auto id = 0; id < 42 ; id++){
+                                        std::cout<<(int)static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base)[id]<<" ";
+                                    }
+                                    std::cout<<std::endl;
                                 }
                                 else if (rv == 6){
                                     // Packet completes tranmission and start to iov.
@@ -198,6 +202,10 @@ int main() {
                             if (index == elicit_index && has_elicit_packet){
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
                                 ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                                for (auto id = 0; id < dmludpwrite ; id++){
+                                    std::cout<<(int)out[id]<<" ";
+                                }
+                                std::cout<<std::endl;
                                 ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
                             }
                         }
@@ -214,8 +222,12 @@ int main() {
                     }
 
                     if (!has_elicit_packet && is_application){
-                        uint8_t ack[1500];
+                        uint8_t ack[9000];
                         auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                        for (auto id = 0; id < result ; id++){
+                            std::cout<<(int)out[id]<<" ";
+                        }
+                        std::cout<<std::endl;
                         auto sent_result = ::send(client_fd, ack, result, 0);
                     }
 

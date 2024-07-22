@@ -44,7 +44,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
         std::set<uint64_t> received_check;
 
         size_t total_bytes;
-	ssize_t written_bytes;
+
+        ssize_t written_bytes;
 
         SendBuf():
         pos(0),
@@ -59,48 +60,41 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 	    written_bytes(0){};
 
         ~SendBuf(){};
-/*void data_clear(){
-            auto i = 0;
-            while(i < data.size()){
-                auto check = received_offset.find(std::get<0>(data[i]));
-                if (check != received_offset.end()){
-                    data.erase(data.begin() + i);
-                }else{
-                    i++;
-                }
-            }
-        }*/
+
         ssize_t cap(){
             used_length = len();
             return ((ssize_t)max_data - (ssize_t)used_length);
         };
-	void data_clear(){
+
+	    void data_clear(){
             ssize_t tmp_pos = pos;
             while(tmp_pos >= 0){
                 auto check = received_offset.find(std::get<0>(data.at(tmp_pos)));
                 if(check == received_offset.end()){
                     tmp_pos--;
                 }else{
-		//	std::cout<<"Send buffer receive offset:"<<std::get<0>(data.at(tmp_pos))<<std::endl;
+                    // std::cout<<"Send buffer receive offset:"<<std::get<0>(data.at(tmp_pos))<<std::endl;
                     data.erase(data.begin() + tmp_pos);
                     pos--;
-		   // std::cout<<"pos--:"<<pos<<std::endl;
-		    tmp_pos--;
+                    // std::cout<<"pos--:"<<pos<<std::endl;
+		            tmp_pos--;
                 }
             }
         }
-	 bool written_complete(){
+
+        bool written_complete(){
             return written_bytes == total_bytes;
         }
-	ssize_t off_front(){
+            
+	    ssize_t off_front(){
             ssize_t result = -1;
-	    //std::cout<<"data.size():"<<data.size()<<std::endl;
+	        // std::cout<<"data.size():"<<data.size()<<std::endl;
             while(pos < data.size()){
-		   // std::cout<<"pos:"<<pos<<std::endl;
+                // std::cout<<"pos:"<<pos<<std::endl;
                 if (received_offset.empty()){
                     result = std::get<0>(data[pos]);
-		    //std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
-//		            std::cout<<"result:"<<result<<", len:"<<std::get<2>(data[pos])<<std::endl;
+                    // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+                    // std::cout<<"result:"<<result<<", len:"<<std::get<2>(data[pos])<<std::endl;
                     last_pos = pos;
                     pos++;
                     break;
@@ -111,18 +105,18 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                     //     pos++;
                     //     break;
                     // }else{
-                        auto check = received_offset.find(std::get<0>(data[pos]));
-//			std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
-                        if(check == received_offset.end()){
-                            result = std::get<0>(data[pos]);
-                       // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
-			    last_pos = pos;
-                            pos++;
-                            break;
-                        }else{
-                            data.erase(data.begin() + pos);
-			    //std::cout<<"erase size:"<<data.size()<<std::endl;
-                        }
+                    auto check = received_offset.find(std::get<0>(data[pos]));
+                    // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+                    if(check == received_offset.end()){
+                        result = std::get<0>(data[pos]);
+                        // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
+			            last_pos = pos;
+                        pos++;
+                        break;
+                    }else{
+                        data.erase(data.begin() + pos);
+                        // std::cout<<"erase size:"<<data.size()<<std::endl;
+                    }
                     //}
                     
                 }
@@ -135,23 +129,11 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             return !data.empty();
         };
 
-        // After sending. Move data to data_copy
-        void data_restore(){
-            while(true){
-                data_copy.push_back(std::move(data[last_pos]));
-                data.erase(data.begin() + last_pos);
-                if (last_pos == 0){
-                    break;
-                }
-                last_pos--;
-            }
-        }
-
         void acknowledege_and_drop(uint32_t in_offset, bool is_drop){
             if (is_drop){
                 received_offset.insert(in_offset);
                 received_check.insert(in_offset);
-		//std::cout<<"received_offset.size:"<<received_offset.size()<<", received_check.size:"<<received_check.size()<<std::endl;
+                // std::cout<<"received_offset.size:"<<received_offset.size()<<", received_check.size:"<<received_check.size()<<std::endl;
             }
         }
 
@@ -306,23 +288,9 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
                 // out_len = buf.second.second;
 
-                //out_len = std::get<2>(buf);
+                // out_len = std::get<2>(buf);
 
- //               std::cout<<"out_off:"<<out_off<<", out_len"<<out_len<<", data.len():"<<data.size()<<", pos:"<<pos<<std::endl;
-
-                // if (out_len != MIN_SENDBUF_INITIAL_LEN){
-                //     if (pos == 0){
-                //         if (out_off == 0){
-                //             out_len = 0;
-                //         }else{
-                //             if (total_bytes - out_off >= MIN_SENDBUF_INITIAL_LEN){
-                //                 out_len = MIN_SENDBUF_INITIAL_LEN;
-                //             }else{
-                //                 out_len = total_bytes - out_off + 1;
-                //             }   
-                //         }
-                //     }
-                // }
+                // std::cout<<"out_off:"<<out_off<<", out_len"<<out_len<<", data.len():"<<data.size()<<", pos:"<<pos<<std::endl;
 
                 if (partial) {
                     // We reached the maximum capacity, so end here.
@@ -331,34 +299,41 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
             }
             sent += out_len;
-	    //std::cout<<"out_len:"<<out_len<<std::endl;
-            //All data in the congestion control window has been sent. need to modify
+            // std::cout<<"out_len:"<<out_len<<std::endl;
+            // All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
-		   // std::cout<<"sent >= max_data, sent:"<<sent<<", max_data:"<<max_data<<std::endl;
+                // std::cout<<"sent >= max_data, sent:"<<sent<<", max_data:"<<max_data<<std::endl;
                 stop = true;
             }
             if (pos == data.size()){
-		   // std::cout<<"pos:"<<pos<<", data.size():"<<data.size()<<std::endl;
+                // std::cout<<"pos:"<<pos<<", data.size():"<<data.size()<<std::endl;
                 stop = true;
-		/*if (!data.empty()){
-                    pos = 0;
-                }else{
-                    stop = true;
-                }*/
             }
 
             if (data.empty()){
-		   // std::cout<<"data.empty()"<<std::endl;
+                // std::cout<<"data.empty()"<<std::endl;
                 stop = true;
             }
 
             if (stop){
                 sent = 0;
-	//	pos = 0;
-		//std::cout<<"sent:"<<sent<<std::endl;
+                // pos = 0;
+                // std::cout<<"sent:"<<sent<<std::endl;
             }
             return stop;
         };
+
+        // After sending. Move data to data_copy
+        void data_restore(){
+            while(true){
+                data_copy.push_back(std::move(data[last_pos]));
+                data.erase(data.begin() + last_pos);
+                if (last_pos == 0){
+                    break;
+                }
+                last_pos--;
+            }
+        }
 
         // call recovery_data when timeout or normal send().
         void recovery_data(){
@@ -369,9 +344,9 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             }
 
             for(auto i = 0; i < data_copy.size(); i++){
-                if(received_check.find(std::get<0>(data_copy[i])) != received_check.end()){
-                    continue;
-                }
+                // if(received_check.find(std::get<0>(data_copy[i])) != received_check.end()){
+                //     continue;
+                // }
                 if (3 * max_data > data.size()){
                     data.push_back(std::move(data_copy[i]));
                 }else{
@@ -383,8 +358,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
         };
 
         void manage_recovery(){
-            recovery_data();
             data_restore();
+            recovery_data();
             reset_iterator();
         };
         

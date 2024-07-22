@@ -201,10 +201,6 @@ int main() {
                         for (auto index = 0; index < retval; index++){
                             auto read = msgs[index].msg_len;
                             if (read > 0){
-				    /*for(auto id = 0; id<read;id++){
-					    std::cout<<(int)(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base))[id]<<" ";
-				    }
-				    std::cout<<std::endl;*/
                                 auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                                 uint32_t offset;
                                 uint64_t pkt_num;
@@ -279,34 +275,20 @@ int main() {
                         if (!w2dmludp){
                             return false;
                         
-			}
-                //	std::cout<<"get data"<<std::endl;
+			            }
+
                     }
                     size_t start_index = 0;
-                /*  auto ts1 = std::chrono::system_clock::now();
-
-    // 转换为时间点从纪元开始的时间间隔
-    auto duration1 = ts1.time_since_epoch();
-
-    // 转换为毫秒
-    auto millis1 = std::chrono::duration_cast<std::chrono::nanoseconds>(duration1).count();*/
+  
 
                     auto send_num = dmludp_connection_send_messages(dmludp_connection, start_index);
-		    if (send_num == 0){
+		            if (send_num == 0){
                         continue;
                     }
                     auto message_hdr = dmludp_connection_get_mmsghdr(dmludp_connection);
-//		    std::cout<<"start_index:"<<start_index<<", send_num:"<<send_num<<std::endl;
                     auto sent = 0;
                     size_t dmludp_error = 0;
-/*auto ts2 = std::chrono::system_clock::now();
 
-    // 转换为时间点从纪元开始的时间间隔
-    auto duration2 = ts2.time_since_epoch();
-
-    // 转换为毫秒
-    auto millis2 = std::chrono::duration_cast<std::chrono::nanoseconds>(duration2).count();
-    std::cout<<"diff:"<<(millis2-millis1)<<" ns"<<std::endl;*/
                     while(send_num > sent){
                         auto retval = sendmmsg(server_fd, message_hdr.data() + start_index + sent, send_num - sent, 0);
                         if (retval == -1){
@@ -324,33 +306,12 @@ int main() {
                         }
                         sent += retval;
                     }
-		/*   std::cout<<"server sendmmsg"<<std::endl;
-		    std::cout<<"start_index:"<<start_index<<", sent:"<<sent<<std::endl;
-for (auto k =start_index; k - start_index < sent;k++) {
-            for (size_t i = 0; i < message_hdr.at(k).msg_hdr.msg_iovlen; ++i) {*/
-                /*if (message_hdr.at(k).msg_hdr.msg_iov[i].iov_len == 26){
-                        std::cout<<"k:"<<k<<" ";
-                    for(auto j = 0; j < 26; j++){
-                        std::cout << (int)(static_cast<uint8_t*>(message_hdr.at(k).msg_hdr.msg_iov[i].iov_base))[j]<< " ";
-                    }
-                    std::cout<<std::endl;
-                }*/
-		/*if(i%2 ==0){
-			for(auto j = 0; j < message_hdr.at(k).msg_hdr.msg_iov[i].iov_len; j++){
-                        std::cout << (int)(static_cast<uint8_t*>(message_hdr.at(k).msg_hdr.msg_iov[i].iov_base))[j]<< " ";
-                    }
-                    std::cout<<std::endl;
-		}
-            }
-        }
-std::cout<<"server end"<<std::endl;*/
+
                     if (dmludp_error == EAGAIN){
-			   //std::cout<<"EAGAIN, sent:"<<sent<<std::endl;
                         dmludp_connection_send_message_complete(dmludp_connection, dmludp_error, sent);
                     }else{
                         dmludp_connection_send_message_complete(dmludp_connection);
                     }   
-		    //std::cout<<"dmludp_connection_send_message_complete"<<std::endl;                    
 
                 }
             }

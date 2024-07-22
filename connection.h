@@ -382,6 +382,10 @@ public:
     std::pair<uint64_t, uint64_t> sent_packet_range_cache1;
 
     std::pair<uint64_t, uint64_t> sent_packet_range_cache2;
+
+    // send_difference < receive_difference
+    // difference_flag = true;
+    bool difference_flag;
     ///////////////////////////////
 
     Connection(sockaddr_storage local, sockaddr_storage peer, Config config, bool server):    
@@ -435,7 +439,8 @@ public:
     send_message_end(0),
     send_message_left(0),
     data_gotten(true),
-    send_phrase(true)
+    send_phrase(true),
+    difference_flag(false)
     {
         send_ack.reserve(42);
         init();
@@ -677,6 +682,13 @@ public:
             }
                 
             // RRD.add_offset_and_pktnum(hdr->pkt_num, hdr->offset, hdr->pkt_length);
+            uint8_t tmp_send = pkt_difference + 1;
+            uint8_t tmp_received = receive_connection_difference + 1;
+            if (tmp_send == receive_connection_difference){
+                difference_flag = true;
+                return 0;
+            }
+
             if (pkt_difference != receive_connection_difference){
                 clear_recv_setting();
             }
@@ -730,17 +742,12 @@ public:
 	    // std::cout<<"send_connection_difference:"<<(int)send_connection_difference<<", packet connection:"<<(int)reinterpret_cast<Header *>(src)->difference<<std::endl;
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
-	    // std::cout<<"first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
-	    // std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
-	    // std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
-	    // std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
+	    std::cout<<"first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
+	    std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
+	    std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
+	    std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
         bool loss_check = false;
         size_t received_num = 0;
-        // uint64_t start_pn = send_pkt_duration[pkt_num].first;
-        // uint64_t end_pn = send_pkt_duration[pkt_num].second;
-
-        // uint64_t start_pn_check = send_range.first;
-        // uint64_t end_pn_check = send_range.second;
 
         bool is_last_ack = false;
 
@@ -759,7 +766,7 @@ public:
        
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
-                //std::cout<<"offset:"<<check_offset<<" received"<<std::endl;
+                std::cout<<"pn:"<<check_pn<<", offset:"<<check_offset<<" received"<<std::endl;
                 received_num++;
                 // if (check_pn <= last_cwnd_copy.second && check_pn >= last_cwnd_copy.first){
                 //     received_packets++;
@@ -780,9 +787,7 @@ public:
             }
         }
 
-        // if (received_packets == last_cwnd_copy.second - last_cwnd_copy.first + 1){
-        //     loss_check = false;
-        // }  
+
         if (received_packets == sent_packet_range.second - sent_packet_range.first + 1){
             loss_check = false;
         }  
@@ -1220,159 +1225,6 @@ public:
         return send_messages;
     }
 
-    
-    // ssize_t send_message(size_t &start_){
-    //     // Check send status and if EAGAIN happens.
-    //     auto has_error = get_dmludp_error();
-	//     //std::cout<<"ssize_t send_message(size_t &start_)"<<std::endl;
-    //     ssize_t written_len_ = 0;
-    //     auto send_seq = 0;
-    //     // Process EAGAIN
-    //     /* TODO
-    //         Here ignore the scenario that the resend caused by EAGAIN meets full send preparation.
-    //     */ 
-	//     //std::cout<<"data.size():"<<send_buffer.data.size()<<", copy.size():"<<send_buffer.data_copy.size()<<std::endl;
-    //     // First process send error.
-    //     if (has_error != 0){
-    //         std::cout<<"0 send_message_start:"<<send_message_start;
-	//         start_ = send_message_start + dmludp_error_sent;
-    //         written_len_ = send_message_end - dmludp_error_sent - send_message_start;
-    //         if (written_len_ == 0){
-    //             set_error(0, 0);
-    //         }
-	//         std::cout<<", written_len_:"<<written_len_<<std::endl;
-    //         return written_len_;
-    //     }
-    //     auto current_status = check_status2();
-
-    //     if (data_gotten){
-    //         auto tmp = send_first_message();
-    //         send_message_start = 0;
-    //         start_ = send_message_start;
-    //         std::cout<<"1 send_message_start:"<<send_message_start<<std::endl;
-    //         send_message_end = send_messages.size();        
-    //         written_len_ = send_message_end - send_message_start;
-    //         // data_gotten = false;
-    //         return written_len_;
-    //     }
-
-    //     // Status 4(normal), 6(loss), 5(time out), 1(normal), 2(partial), 3(preparation)
-    //     // send partial
-    //     // Partial send number is received packets
-    //     // Fulll send number is cwnd / MAX_SEND_UDP_PAYLOAD_SIZE - partial send number + 1;
-    //     if (current_status == 2){
-    //         send_message_start = partial_send_packets;
-    //         partial_send_packets += received_packets; 
-    //         //send_message_end = partial_send_packets;
-    //         if(partial_send_packets > send_messages.size()){
-    //             send_message_end = send_messages.size();
-    //         }else{
-    //             send_message_end = partial_send_packets;
-    //         }
-	//         if(send_message_start > send_messages.size()){
-    //             return 0;
-    //         }
-
-    //         if (send_message_start >= send_message_end){
-    //             return 0;
-    //         }
-	//         // written_len_ = received_packets;
-
-    //         written_len_ = send_message_end - send_message_start;
-	//         //written_len_ = received_packets;
-    //         // send_partial_signal = true;
-    //         // send_full_signal = false;
-    //         send_phrase = false;
-    //         start_ = send_message_start;
-    //         //std::cout<<"send_buffer.size:"<<send_buffer.data.size()<<std::endl;
-    //         std::cout<<"2 send_message_start:"<<send_message_start<<", partial:"<<partial_send_packets<<std::endl;
-    //         if(send_message_start == partial_send_packets){
-    //             return 0;
-    //         }   
-    //     }else if(current_status == 3){
-    //         // Data preparation phrase.
-    //         return 0;
-    //     }else{
-    //         //	std::cout<<"send_buffer.size:"<<send_buffer.data.size()<<std::endl;
-    //         //	std::cout<<"send_buffer.offset.size:"<<send_buffer.received_offset.size()<<std::endl;
-    //         // TODO
-    //         // Recheck cwnd <=>? real data in buffer
-    //         last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
-    //         send_message_start = partial_send_packets;
-    //         auto sentpkts = 0;
-    //         if (congestion_window % MAX_SEND_UDP_PAYLOAD_SIZE == 0){
-    //             sentpkts = congestion_window / MAX_SEND_UDP_PAYLOAD_SIZE;
-    //         }else{
-    //             sentpkts = congestion_window / MAX_SEND_UDP_PAYLOAD_SIZE + 1;
-    //         }
-	//         if (sentpkts > send_messages.size()){
-    //             sentpkts = send_messages.size();
-    //         }
-    //         bool less_check = false;
-    //         if (sentpkts < partial_send_packets){
-    //             written_len_ = 0;
-	// 	        less_check = true;
-    //         }else{
-    //             written_len_ = sentpkts - partial_send_packets;
-    //         }  
-
-    //         sent_packet_range_cache2.first = sent_packet_range_cache1.first;
-    //         sent_packet_range_cache2.second = sent_packet_range_cache1.second;
-    //         sent_packet_range_cache1.first = sent_packet_range.first;
-    //         sent_packet_range_cache1.second = sent_packet_range.second;
-    //         sent_packet_range.first = send_hdrs.at(0)->pkt_num;
-    //         auto end_index = std::min((partial_send_packets + written_len_ - 1), (send_hdrs.size() - 1));
-    //         sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
-
-	//         std::cout<<"seq:"<<last_elicit_ack_pktnum<<", sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<", send difference:"<<(int)send_connection_difference<<std::endl;
-
-	//         // std::cout<<"send_message:"<<last_elicit_ack_pktnum<<std::endl; 
-    //         send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
-    //         /*std::cout<<"Elicit ack"<<std::endl;
-    //         for(auto index = 0; index<send_ack.size();index++){
-    //             std::cout<<(int)send_ack[index]<<" ";
-    //         }
-    //         std::cout<<std::endl;*/
-    //         ack_iovec.iov_base = send_ack.data();
-    //         ack_iovec.iov_len = send_ack.size();
-
-    //         ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-    //         ack_mmsghdr.msg_hdr.msg_iovlen = 1;
-
-	//         std::cout<<"send_messages.size():"<<send_messages.size()<<", sentpkts:"<<sentpkts<<std::endl;
-    //         //send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
-    //         /*if (sentpkts > send_messages.size()){
-    //             sentpkts = send_messages.size();
-    //         }*/
-    //         if(send_messages.size() > sentpkts && !less_check){
-    //             send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
-    //         }
-    //         else if(send_messages.size() > sentpkts && less_check){
-    //             std::cout<<"partial_send_packets:"<<partial_send_packets<<std::endl;
-    //             if(partial_send_packets < send_messages.size()){
-    //                 send_messages.insert(send_messages.begin() + partial_send_packets, ack_mmsghdr);
-    //             }else{
-    //                 send_messages.push_back(ack_mmsghdr);
-    //             }  
-	//         }
-    //         else{
-    //             send_messages.push_back(ack_mmsghdr);
-    //         }
-    //         send_message_end = partial_send_packets + written_len_ + 1;
-    //         written_len_++;
-    //         // send_partial_signal = false;
-    //         // send_full_signal = true;
-    //         send_phrase = true;
-    //         start_ = send_message_start;
-	//         if(send_message_start > send_messages.size() && send_buffer.written_complete()){
-    //             return 0;
-    //         }
-    //        // std::cout<<"3 send_message_start:"<<send_message_start<<std::endl;
-    //         }
-    //     //std::cout<<"send_message start_:"<<start_<<std::endl;
-    //    // std::cout<<"send_message_start:"<<send_message_start<<", send_message_end:"<<send_message_end<<std::endl; 
-    //     return written_len_;
-    // }
     /*  Prepare mmsghdr(either send_mmsg or send_partial_mmsg)
         Also processing the resend when EAGAIN occur
         Remove acknowledge packet from send_mmsg2, Add this message in send_messages
@@ -1638,7 +1490,7 @@ public:
             }
             if (send_messages.size() * MAX_SEND_UDP_PAYLOAD_SIZE < forecast_){
                 send_mmsg2(forecast_);
-		    //std::cout<<"send_mmsg2, send_messages.size:"<<send_messages.size()<<", forecast_:"<<forecast_<<std::endl;
+                // std::cout<<"send_mmsg2, send_messages.size:"<<send_messages.size()<<", forecast_:"<<forecast_<<std::endl;
             }
             // else{
             //     last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
@@ -1665,9 +1517,10 @@ public:
             next_range.first = 0;
             next_range.second = 0;
         }
-	if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
+
+        if (data_buffer.at(current_buffer_pos).left > 0){
+            data2buffer(data_buffer.at(current_buffer_pos));
+        }
         //send_buffer.data_clear();
     }
 
@@ -2556,11 +2409,16 @@ public:
             feed_back = false;
             psize = (uint64_t)(receive_result.size()) + 2 * sizeof(uint64_t);
             Header* hdr = new Header(ty, send_num, 0, 0, send_num, 1, receive_connection_difference, psize);
+            if (check_loss_pktnum){
+                uint8_t tmp = receive_connection_difference - 1;
+                hdr->difference = tmp;
+            }
             memcpy(out, hdr, HEADER_LENGTH);
             memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
             memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
             memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data(), receive_result.size());
             receive_result.clear();
+            check_loss_pktnum = false;
             delete hdr; 
             hdr = nullptr; 
         }      
@@ -2591,19 +2449,28 @@ public:
         auto end = current_loop_max;
         uint64_t psize = end - start + 1;
         Header* hdr = new Header(ty, send_num, 0, 0, send_num, 0, receive_connection_difference, psize);
+        if(difference_flag){
+            uint8_t tmp = receive_connection_difference - 1;
+            hdr->difference = tmp;
+        }
         memcpy(src, hdr, HEADER_LENGTH);
         memcpy(src + HEADER_LENGTH, &start, sizeof(Packet_num_len));
         memcpy(src + HEADER_LENGTH + sizeof(Packet_num_len), &end, sizeof(Packet_num_len));
 
         for (auto pn = start; pn <= end; pn++){
             auto off_ = HEADER_LENGTH + 2 * sizeof(Packet_num_len) + pn - start;
-            if(receive_pktnum2offset.find(pn) == receive_pktnum2offset.end()){
-                src[off_] = 1;
-            }else{
+            if(difference_flag){
                 src[off_] = 0;
+            }else{
+                if(receive_pktnum2offset.find(pn) == receive_pktnum2offset.end()){
+                    src[off_] = 1;
+                }else{
+                    src[off_] = 0;
+                }
             }
         }
         psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);
+        difference_flag = false;
         return psize;
     }
 
@@ -2683,12 +2550,13 @@ public:
     void check_loss_pktnum(uint8_t* src, size_t src_len){
         uint64_t start = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH);
         uint64_t end = *reinterpret_cast<uint64_t*>(src + HEADER_LENGTH + sizeof(uint64_t));
-	    uint8_t send_seq = reinterpret_cast<Header *>(src)->seq;
-        uint8_t trail_send_seq = send_seq + 1;
+	    uint8_t send_difference = reinterpret_cast<Header *>(src)->difference;
+        uint8_t trail_send_difference = send_difference + 1;
         // Used to debug.
         // std::map<uint64_t, uint8_t> ack_record;
         receive_range = std::make_pair(start, end);
-	    if(trail_send_seq == receive_connection_difference){
+	    if(trail_send_difference == receive_connection_difference){
+            difference_flag = true;
             if(end - start < MAX_SEND_UDP_PAYLOAD_SIZE){
                 receive_result.resize((end - start + 1), 0);
             }
