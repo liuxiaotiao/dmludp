@@ -15,7 +15,7 @@
 #include <vector>
 #include <cstdint>  // 包含 uint8_t 的定义
 #include <arpa/inet.h>
-#define PORT 12356
+#define PORT 12355
 #define MAX_EVENTS 10
 #define SERVER_IP "10.10.1.1"
 #define FILE_SIZE 104857600
