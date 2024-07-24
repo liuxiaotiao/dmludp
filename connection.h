@@ -1508,17 +1508,16 @@ public:
             sent_packet_range_cache1.second = sent_packet_range.second;
             sent_packet_range.first = send_hdrs.at(0)->pkt_num;
 
-            ack_iovec.iov_base = send_ack.data();
-            ack_iovec.iov_len = send_ack.size();
-
-            ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-            ack_mmsghdr.msg_hdr.msg_iovlen = 1;
-
             // When send_messages cannot fullfil the cwnd, sendpkts resize to send_messages.size().
 	        if (sentpkts >= send_messages.size()){
                 sentpkts = send_messages.size();
                 sent_packet_range.second = send_hdrs.back()->pkt_num;
                 send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                ack_iovec.iov_base = send_ack.data();
+                ack_iovec.iov_len = send_ack.size();
+
+                ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+                ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                 send_messages.push_back(ack_mmsghdr);
                 sentpkts++;
                 send_message_start = send_message_end;
@@ -1529,12 +1528,22 @@ public:
                     if (sentpkts >= send_messages.size()){
                         sent_packet_range.second = send_hdrs.back()->pkt_num;
                         send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        ack_iovec.iov_base = send_ack.data();
+                        ack_iovec.iov_len = send_ack.size();
+
+                        ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+                        ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                         send_messages.push_back(ack_mmsghdr);
                         send_message_start = send_messages.size() - 1;
                         send_message_end = send_messages.size();
                     }else{
                         sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
                         send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        ack_iovec.iov_base = send_ack.data();
+                        ack_iovec.iov_len = send_ack.size();
+
+                        ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+                        ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                         send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
                         send_message_start = send_message_end;
                         send_message_end = sentpkts + 1;
@@ -1542,6 +1551,11 @@ public:
                 }else{
                     sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
                     send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                    ack_iovec.iov_base = send_ack.data();
+                    ack_iovec.iov_len = send_ack.size();
+
+                    ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+                    ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                     send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
                     sentpkts += 1;
                     send_message_start = send_message_end;
