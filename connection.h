@@ -363,7 +363,10 @@ public:
 
     ssize_t send_message_left;
 
+    // In one cwnd, real sent packets
     ssize_t real_sent;
+    // Expected sent packets
+    ssize_t expect_sent;
 
     std::pair<uint64_t, uint64_t> next_range;
 
@@ -440,7 +443,9 @@ public:
     send_message_left(0),
     data_gotten(true),
     send_phrase(true),
-    difference_flag(false)
+    difference_flag(false),
+    real_sent(0),
+    expect_sent(0)
     {
         send_ack.reserve(42);
         init();
@@ -919,6 +924,8 @@ public:
         can_send = true;
         partial_send = false;
         data_gotten = true;
+        real_sent = 0;
+        expect_sent = 0;
         return completed;
     }
 
@@ -1243,6 +1250,179 @@ public:
     /*
     cwnd, partial, send_message.size
     */
+    // ssize_t send_message(size_t &start_){
+    //     // Check send status and if EAGAIN happens.
+    //     auto has_error = get_dmludp_error();
+	//     //std::cout<<"ssize_t send_message(size_t &start_)"<<std::endl;
+    //     ssize_t written_len_ = 0;
+    //     auto send_seq = 0;
+    //     // Process EAGAIN
+    //     /* TODO
+    //         Here ignore the scenario that the resend caused by EAGAIN meets full send preparation.
+    //     */ 
+	//     //std::cout<<"data.size():"<<send_buffer.data.size()<<", copy.size():"<<send_buffer.data_copy.size()<<std::endl;
+    //     // First process send error.
+    //     if (has_error != 0){
+    //         // std::cout<<"0 send_message_start:"<<send_message_start;
+	//         start_ = send_message_start + dmludp_error_sent;
+    //         written_len_ = send_message_end - dmludp_error_sent - send_message_start;
+    //         if (written_len_ == 0){
+    //             set_error(0, 0);
+    //         }
+	//         // std::cout<<", written_len_:"<<written_len_<<std::endl;
+    //         return written_len_;
+    //     }
+    //     auto current_status = check_status2();
+
+    //     if (data_gotten){
+    //         auto tmp = send_first_message();
+    //         send_message_start = 0;
+    //         start_ = send_message_start;
+    //         // std::cout<<"1 send_message_start:"<<send_message_start<<std::endl;
+    //         send_message_end = send_messages.size();        
+    //         written_len_ = send_message_end - send_message_start;
+    //         // data_gotten = false;
+    //         return written_len_;
+    //     }
+
+    //     // Status 4(normal), 6(loss), 5(time out), 1(normal), 2(partial), 3(preparation)
+    //     // send partial
+    //     // Partial send number is received packets
+    //     // Fulll send number is cwnd / MAX_SEND_UDP_PAYLOAD_SIZE - partial send number + 1;
+    //     if (current_status == 2){
+    //         if (partial_send_packets > send_messages.size()){
+    //             return 0;
+    //         }
+    //         send_message_start = partial_send_packets;
+    //         partial_send_packets += received_packets; 
+    //         //send_message_end = partial_send_packets;
+    //         if(partial_send_packets > send_messages.size()){
+    //             send_message_end = send_messages.size();
+    //             partial_send_packets = send_messages.size();
+    //         }else{
+    //             send_message_end = partial_send_packets;
+    //         }
+            
+	//         // if(send_message_start > send_messages.size()){
+    //         //     return 0;
+    //         // }
+
+    //         if (send_message_start >= send_message_end){
+    //             return 0;
+    //         }
+	//         // written_len_ = received_packets;
+
+    //         written_len_ = send_message_end - send_message_start;
+	//         //written_len_ = received_packets;
+    //         // send_partial_signal = true;
+    //         // send_full_signal = false;
+    //         send_phrase = false;
+    //         start_ = send_message_start;
+    //         //std::cout<<"send_buffer.size:"<<send_buffer.data.size()<<std::endl;
+    //         // std::cout<<"2 send_message_start:"<<send_message_start<<", partial:"<<partial_send_packets<<std::endl;
+    //         if(send_message_start == partial_send_packets){
+    //             return 0;
+    //         }   
+    //     }else if(current_status == 3){
+    //         // Data preparation phrase.
+    //         return 0;
+    //     }else{
+    //         //	std::cout<<"send_buffer.size:"<<send_buffer.data.size()<<std::endl;
+    //         //	std::cout<<"send_buffer.offset.size:"<<send_buffer.received_offset.size()<<std::endl;
+    //         // TODO
+    //         // Recheck cwnd <=>? real data in buffer
+    //         last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
+            
+    //         auto sentpkts = 0;
+
+    //         // Get packets numbers in this cwnd.
+    //         if (congestion_window % MAX_SEND_UDP_PAYLOAD_SIZE == 0){
+    //             sentpkts = congestion_window / MAX_SEND_UDP_PAYLOAD_SIZE;
+    //         }else{
+    //             sentpkts = congestion_window / MAX_SEND_UDP_PAYLOAD_SIZE + 1;
+    //         }
+    //         // When send_messages cannot fullfil the cwnd, sendpkts resize to send_messages.size().
+	//         if (sentpkts > send_messages.size()){
+    //             sentpkts = send_messages.size();
+    //         }
+
+    //         // partial_send_packets: expected max sent packets
+    //         // send_message_end: real sent packets
+    //         bool less_check = false;
+    //         if (sentpkts <= partial_send_packets){
+    //             written_len_ = 0;
+	// 	        less_check = true;
+    //             send_message_start = send_message_end;
+    //             if (send_message_start >= send_messages.size()){
+    //                 send_message_start = send_messages.size();
+    //             }
+    //         }else{
+    //             written_len_ = sentpkts - partial_send_packets;
+    //             send_message_start = partial_send_packets;
+    //         }  
+
+    //         sent_packet_range_cache2.first = sent_packet_range_cache1.first;
+    //         sent_packet_range_cache2.second = sent_packet_range_cache1.second;
+    //         sent_packet_range_cache1.first = sent_packet_range.first;
+    //         sent_packet_range_cache1.second = sent_packet_range.second;
+    //         sent_packet_range.first = send_hdrs.at(0)->pkt_num;
+    //         if (sentpkts <= partial_send_packets){
+    //             auto end_index = send_message_end - 1;
+    //             sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
+    //         }else{
+    //             auto end_index = std::min((partial_send_packets + written_len_ - 1), (send_hdrs.size() - 1));
+    //             sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
+    //         }
+
+	//         // std::cout<<"seq:"<<last_elicit_ack_pktnum<<", sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<", send difference:"<<(int)send_connection_difference<<std::endl;
+
+	//         // std::cout<<"send_message:"<<last_elicit_ack_pktnum<<std::endl; 
+    //         send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+    //         /*std::cout<<"Elicit ack"<<std::endl;
+    //         for(auto index = 0; index<send_ack.size();index++){
+    //             std::cout<<(int)send_ack[index]<<" ";
+    //         }
+    //         std::cout<<std::endl;*/
+    //         ack_iovec.iov_base = send_ack.data();
+    //         ack_iovec.iov_len = send_ack.size();
+
+    //         ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+    //         ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+
+	//         // std::cout<<"send_messages.size():"<<send_messages.size()<<", sentpkts:"<<sentpkts<<std::endl;
+    //         //send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
+    //         /*if (sentpkts > send_messages.size()){
+    //             sentpkts = send_messages.size();
+    //         }*/
+    //         if(send_messages.size() > sentpkts && !less_check){
+    //             send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
+    //         }
+    //         else if(send_messages.size() > sentpkts && less_check){
+    //             // std::cout<<"partial_send_packets:"<<partial_send_packets<<std::endl;
+    //             if(partial_send_packets < send_messages.size()){
+    //                 send_messages.insert(send_messages.begin() + partial_send_packets, ack_mmsghdr);
+    //             }else{
+    //                 send_messages.push_back(ack_mmsghdr);
+    //             }  
+	//         }
+    //         else{
+    //             send_messages.push_back(ack_mmsghdr);
+    //         }
+    //         send_message_end = partial_send_packets + written_len_ + 1;
+    //         written_len_++;
+    //         // send_partial_signal = false;
+    //         // send_full_signal = true;
+    //         send_phrase = true;
+    //         start_ = send_message_start;
+	//         if(send_message_start > send_messages.size() && send_buffer.written_complete()){
+    //             return 0;
+    //         }
+    //        // std::cout<<"3 send_message_start:"<<send_message_start<<std::endl;
+    //         }
+    //     //std::cout<<"send_message start_:"<<start_<<std::endl;
+    //    // std::cout<<"send_message_start:"<<send_message_start<<", send_message_end:"<<send_message_end<<std::endl; 
+    //     return written_len_;
+    // }
     ssize_t send_message(size_t &start_){
         // Check send status and if EAGAIN happens.
         auto has_error = get_dmludp_error();
@@ -1283,39 +1463,26 @@ public:
         // Partial send number is received packets
         // Fulll send number is cwnd / MAX_SEND_UDP_PAYLOAD_SIZE - partial send number + 1;
         if (current_status == 2){
-            if (partial_send_packets > send_messages.size()){
+            if (send_message_start >= send_messages.size()){
                 return 0;
             }
-            send_message_start = partial_send_packets;
-            partial_send_packets += received_packets; 
-            //send_message_end = partial_send_packets;
-            if(partial_send_packets > send_messages.size()){
+
+            send_message_start = send_message_end;
+            ssize_t expected_send_message_end = send_message_end + received_packets;
+            if (expected_send_message_end >= send_messages.size()){
                 send_message_end = send_messages.size();
-                partial_send_packets = send_messages.size();
             }else{
-                send_message_end = partial_send_packets;
+                send_message_end = expected_send_message_end;
             }
-            
-	        // if(send_message_start > send_messages.size()){
-            //     return 0;
-            // }
 
             if (send_message_start >= send_message_end){
                 return 0;
             }
-	        // written_len_ = received_packets;
-
+            
             written_len_ = send_message_end - send_message_start;
-	        //written_len_ = received_packets;
-            // send_partial_signal = true;
-            // send_full_signal = false;
+
             send_phrase = false;
             start_ = send_message_start;
-            //std::cout<<"send_buffer.size:"<<send_buffer.data.size()<<std::endl;
-            // std::cout<<"2 send_message_start:"<<send_message_start<<", partial:"<<partial_send_packets<<std::endl;
-            if(send_message_start == partial_send_packets){
-                return 0;
-            }   
         }else if(current_status == 3){
             // Data preparation phrase.
             return 0;
@@ -1334,86 +1501,56 @@ public:
             }else{
                 sentpkts = congestion_window / MAX_SEND_UDP_PAYLOAD_SIZE + 1;
             }
-            // When send_messages cannot fullfil the cwnd, sendpkts resize to send_messages.size().
-	        if (sentpkts > send_messages.size()){
-                sentpkts = send_messages.size();
-            }
-
-            // partial_send_packets: expected max sent packets
-            // send_message_end: real sent packets
-            bool less_check = false;
-            if (sentpkts <= partial_send_packets){
-                written_len_ = 0;
-		        less_check = true;
-                send_message_start = send_message_end;
-                if (send_message_start >= send_messages.size()){
-                    send_message_start = send_messages.size();
-                }
-            }else{
-                written_len_ = sentpkts - partial_send_packets;
-                send_message_start = partial_send_packets;
-            }  
 
             sent_packet_range_cache2.first = sent_packet_range_cache1.first;
             sent_packet_range_cache2.second = sent_packet_range_cache1.second;
             sent_packet_range_cache1.first = sent_packet_range.first;
             sent_packet_range_cache1.second = sent_packet_range.second;
             sent_packet_range.first = send_hdrs.at(0)->pkt_num;
-            if (sentpkts <= partial_send_packets){
-                auto end_index = send_message_end - 1;
-                sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
-            }else{
-                auto end_index = std::min((partial_send_packets + written_len_ - 1), (send_hdrs.size() - 1));
-                sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
-            }
 
-	        // std::cout<<"seq:"<<last_elicit_ack_pktnum<<", sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<", send difference:"<<(int)send_connection_difference<<std::endl;
-
-	        // std::cout<<"send_message:"<<last_elicit_ack_pktnum<<std::endl; 
-            send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
-            /*std::cout<<"Elicit ack"<<std::endl;
-            for(auto index = 0; index<send_ack.size();index++){
-                std::cout<<(int)send_ack[index]<<" ";
-            }
-            std::cout<<std::endl;*/
             ack_iovec.iov_base = send_ack.data();
             ack_iovec.iov_len = send_ack.size();
 
             ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
             ack_mmsghdr.msg_hdr.msg_iovlen = 1;
 
-	        // std::cout<<"send_messages.size():"<<send_messages.size()<<", sentpkts:"<<sentpkts<<std::endl;
-            //send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
-            /*if (sentpkts > send_messages.size()){
+            // When send_messages cannot fullfil the cwnd, sendpkts resize to send_messages.size().
+	        if (sentpkts >= send_messages.size()){
                 sentpkts = send_messages.size();
-            }*/
-            if(send_messages.size() > sentpkts && !less_check){
-                send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
-            }
-            else if(send_messages.size() > sentpkts && less_check){
-                // std::cout<<"partial_send_packets:"<<partial_send_packets<<std::endl;
-                if(partial_send_packets < send_messages.size()){
-                    send_messages.insert(send_messages.begin() + partial_send_packets, ack_mmsghdr);
-                }else{
-                    send_messages.push_back(ack_mmsghdr);
-                }  
-	        }
-            else{
+                sent_packet_range.second = send_hdrs.back()->pkt_num;
+                send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
                 send_messages.push_back(ack_mmsghdr);
+                sentpkts++;
+                send_message_start = send_message_end;
+                send_message_end = sentpkts;
+            }else{
+                if (sentpkts <= send_message_end){
+                    sentpkts = send_message_end;
+                    if (sentpkts >= send_messages.size()){
+                        sent_packet_range.second = send_hdrs.back()->pkt_num;
+                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        send_messages.push_back(ack_mmsghdr);
+                        send_message_start = send_messages.size() - 1;
+                        send_message_end = send_messages.size();
+                    }else{
+                        sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
+                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
+                        send_message_start = send_message_end;
+                        send_message_end = sentpkts + 1;
+                    }
+                }else{
+                    sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
+                    send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                    send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
+                    sentpkts += 1;
+                    send_message_start = send_message_end;
+                    send_message_end = sentpkts;
+                }
             }
-            send_message_end = partial_send_packets + written_len_ + 1;
-            written_len_++;
-            // send_partial_signal = false;
-            // send_full_signal = true;
-            send_phrase = true;
-            start_ = send_message_start;
-	        if(send_message_start > send_messages.size() && send_buffer.written_complete()){
-                return 0;
-            }
-           // std::cout<<"3 send_message_start:"<<send_message_start<<std::endl;
-            }
-        //std::cout<<"send_message start_:"<<start_<<std::endl;
-       // std::cout<<"send_message_start:"<<send_message_start<<", send_message_end:"<<send_message_end<<std::endl; 
+            written_len_ = send_message_end - send_message_start;
+        }
+
         return written_len_;
     }
 
