@@ -2572,7 +2572,7 @@ public:
             feed_back = false;
             psize = (uint64_t)(receive_result.size()) + 2 * sizeof(uint64_t);
             Header* hdr = new Header(ty, send_num, 0, 0, send_num, 1, receive_connection_difference, psize);
-            if (check_loss_pktnum){
+            if (difference_flag){
                 uint8_t tmp = receive_connection_difference - 1;
                 hdr->difference = tmp;
             }
@@ -2581,7 +2581,7 @@ public:
             memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
             memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data(), receive_result.size());
             receive_result.clear();
-            check_loss_pktnum = false;
+            difference_flag = false;
             delete hdr; 
             hdr = nullptr; 
         }      
