@@ -747,10 +747,10 @@ public:
 	    // std::cout<<"send_connection_difference:"<<(int)send_connection_difference<<", packet connection:"<<(int)reinterpret_cast<Header *>(src)->difference<<std::endl;
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
-	    std::cout<<"first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
-	    std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
-	    std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
-	    std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
+	    // std::cout<<"first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
+	    // std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
+	    // std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
+	    // std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
         bool loss_check = false;
         size_t received_num = 0;
 
@@ -771,7 +771,7 @@ public:
        
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
-                std::cout<<"pn:"<<check_pn<<", offset:"<<check_offset<<" received"<<std::endl;
+                // std::cout<<"pn:"<<check_pn<<", offset:"<<check_offset<<" received"<<std::endl;
                 received_num++;
                 // if (check_pn <= last_cwnd_copy.second && check_pn >= last_cwnd_copy.first){
                 //     received_packets++;
@@ -1508,37 +1508,77 @@ public:
             sent_packet_range_cache1.second = sent_packet_range.second;
             sent_packet_range.first = send_hdrs.at(0)->pkt_num;
 
-            // When send_messages cannot fullfil the cwnd, sendpkts resize to send_messages.size().
-	        if (sentpkts >= send_messages.size()){
-                sentpkts = send_messages.size();
+            /* 
+            sentpkts < send_message_end || sentpkts > send_message_end || sentpkts == send_message_end
+            sentpkts < send_messages.size() || sentpkts > send_messages.size() || sentpkts == send_messages.size() 
+            send_message_end < send_messages.size() || send_message_end > send_messages.size() || send_message_end == send_messages.size()
+            A: sentpkts
+            B: send_message_end
+            C: send_messages.size()
+
+            A <= B <= C 
+            => sentpkts <= send_message_end <= send_messages.size() X
+            A <= C <= B
+            => sentpkts <= send_messages.size() <= send_message_end X
+            B <= A <= C
+            => send_message_end <= sentpkts <= send_messages.size()
+            B <= C <= A
+            => send_message_end <= send_messages.size() <= sentpkts
+            C <= A <= B
+            => send_messages.size() <= sentpkts <= send_message_end X
+            C <= B <= A
+            => send_messages.size() <= send_message_end <= sentpkts X
+            */
+            if (send_message_end >= send_messages.size()){
+                // send_messages.size() <= send_message_end <= sentpkts
+                // sentpkts <= send_messages.size() <= send_message_end
+                // send_messages.size() <= sentpkts <= send_message_end 
                 sent_packet_range.second = send_hdrs.back()->pkt_num;
-                send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
                 ack_iovec.iov_base = send_ack.data();
                 ack_iovec.iov_len = send_ack.size();
 
                 ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
                 ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                 send_messages.push_back(ack_mmsghdr);
-                sentpkts++;
-                send_message_start = send_message_end;
-                send_message_end = sentpkts;
+                // Send size 1, just a acknowledge packet
+                // e.g 0, 1, 2 are applicatoin packet
+                // 3 is a elicit acknowledge packet
+                send_message_start = send_messages.size() - 1;
+                send_message_end = send_messages.size();
             }else{
                 if (sentpkts <= send_message_end){
-                    sentpkts = send_message_end;
+                    // sentpkts <= send_message_end <= send_messages.size()
+                    sent_packet_range.second = send_hdrs.at(send_message_end - 1)->pkt_num;
+                    send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
+                    ack_iovec.iov_base = send_ack.data();
+                    ack_iovec.iov_len = send_ack.size();
+
+                    ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
+                    ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+                    send_messages.insert(send_messages.begin() + send_message_end, ack_mmsghdr);
+  
+                    send_message_start = send_message_end;
+                    send_message_end += 1;
+                }else{
                     if (sentpkts >= send_messages.size()){
+                        // send_message_end <= send_messages.size() <= sentpkts
                         sent_packet_range.second = send_hdrs.back()->pkt_num;
-                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
                         ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
                         ack_mmsghdr.msg_hdr.msg_iovlen = 1;
                         send_messages.push_back(ack_mmsghdr);
-                        send_message_start = send_messages.size() - 1;
+                        // 0, 1, 2 application packet
+                        // 3 elicit acknowledge packet
+                        send_message_start = send_message_end;
                         send_message_end = send_messages.size();
                     }else{
-                        sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
-                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
+                        // send_message_end <= sentpkts <= send_messages.size()
+                        sent_packet_range.second = send_hdrs.at(send_message_end - 1)->pkt_num;
+                        send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
@@ -1548,20 +1588,9 @@ public:
                         send_message_start = send_message_end;
                         send_message_end = sentpkts + 1;
                     }
-                }else{
-                    sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
-                    send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum, sentpkts);
-                    ack_iovec.iov_base = send_ack.data();
-                    ack_iovec.iov_len = send_ack.size();
-
-                    ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-                    ack_mmsghdr.msg_hdr.msg_iovlen = 1;
-                    send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
-                    sentpkts += 1;
-                    send_message_start = send_message_end;
-                    send_message_end = sentpkts;
                 }
             }
+
             written_len_ = send_message_end - send_message_start;
         }
 
@@ -1616,6 +1645,15 @@ public:
             last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
         }*/
 	    //std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
+        if (sent_packet_range.second != send_connection_difference){
+            for (auto i = 1 ; i < (send_message_end - 1); i++){
+                if (send_hdrs.at(i)->difference == send_connection_difference){
+                    sent_packet_range.second = send_hdrs.at(i)->pkt_num;
+                }
+            }
+        }
+        
+
         if (send_message_end >= send_messages.size()){
             send_hdrs.clear();
             send_messages.clear();
@@ -1672,6 +1710,8 @@ public:
         if (data_buffer.at(current_buffer_pos).left > 0){
             data2buffer(data_buffer.at(current_buffer_pos));
         }
+        send_message_start = 0;
+        send_message_end = 0;
         //send_buffer.data_clear();
     }
 
@@ -1989,7 +2029,7 @@ public:
                     sent_dic[out_off] = priority;
                 }
                 
-                record2ack_pktnum.push_back(pn);
+                // record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
                 send_messages[i].msg_hdr.msg_iov = &send_iovecs[2 * i];
                 send_messages[i].msg_hdr.msg_iovlen = 2;
@@ -2013,35 +2053,7 @@ public:
         }
         next_range.first = first_pn;
         next_range.second = end_pn;
-        /*if (first_check){
-            current_range.first = first_pn;
-            last_range.first = first_pn;
-            last_last_range.first = first_pn;
-            current_range.second = end_pn;
-            last_range.second = end_pn;
-            last_last_range.second = end_pn;
-        }else{
-            if (last_cwnd_copy.first != current_range.first && last_cwnd_copy.second != current_range.second){
-                // There is partial sending before send_mmsg
-                current_range.second = end_pn;
-            }else{
-                // no partial sending.
-                last_last_range.first = last_range.first;
-                last_range.first = current_range.first;
-                current_range.first = first_pn;
-                
-                last_last_range.second = last_range.second;
-                last_range.second = current_range.second;
-                current_range.second = end_pn;
-            }
-        }*/
     
-
-        // auto index = 0;
-        // auto ioves_size = iovecs.size();
-        // auto message_size = messages.size();
-        // iovecs.resize(ioves_size + out_ack.size());
-        // messages.resize(message_size + out_ack.size());
 
         if (written_len){
             stop_ack = false;
@@ -2112,7 +2124,7 @@ public:
     //     pktlen += HEADER_LENGTH;
     //     return pktlen;
     // }
-    ssize_t send_elicit_ack_message_pktnum_new2(uint64_t elicit_acknowledege_packet_number, uint64_t range_){
+    ssize_t send_elicit_ack_message_pktnum_new2(uint64_t elicit_acknowledege_packet_number, uint64_t range_ = 0){
         auto ty = Type::ElicitAck;        
         // auto preparenum = std::min(range_, record2ack_pktnum.size());
 
