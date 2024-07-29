@@ -1009,7 +1009,7 @@ public:
                 }else{
                     send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
                 }
-		        std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
+		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
@@ -1033,7 +1033,7 @@ public:
                     recovery.set_recovery(true);
                     can_send = false;
                     congestion_window = recovery.cwnd();
-                    std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
+                    // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
                     if (partial_send){
                         if(partial_send_packets * MAX_SEND_UDP_PAYLOAD_SIZE >= congestion_window){
                             send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
@@ -1068,7 +1068,7 @@ public:
                 //TODO: set cwnd to send buffer
                 // no time out, sender can send data.
                 congestion_window = recovery.cwnd();
-		        std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
+		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
                 if(partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE >= congestion_window){
                     send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
                 }else{
@@ -1127,7 +1127,7 @@ public:
             // Time out
             if (can_send){
                 congestion_window = recovery.cwnd();
-		        std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
+		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
@@ -1139,7 +1139,7 @@ public:
                     recovery.set_recovery(true);
       			    can_send = false;
                     congestion_window = recovery.cwnd();
-		            std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
+		            // std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
                     // send_buffer.update_max_data(congestion_window);
                     if (data_buffer.at(current_buffer_pos).left > 0){
                         data2buffer(data_buffer.at(current_buffer_pos));
@@ -1151,7 +1151,7 @@ public:
                     recovery.set_recovery(true);
                     can_send = false;
                     congestion_window = recovery.cwnd();
-                    std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
+                    // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
                     if (data_buffer.at(current_buffer_pos).left > 0){
                         data2buffer(data_buffer.at(current_buffer_pos));
                     }
@@ -1169,7 +1169,7 @@ public:
                 //TODO: set cwnd to send buffer
                 // no time out, sender can send data.
                 congestion_window = recovery.cwnd();
-		        std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
+		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
                 if (data_buffer.at(current_buffer_pos).left > 0){
                     data2buffer(data_buffer.at(current_buffer_pos));
                 }
