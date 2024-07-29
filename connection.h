@@ -1467,6 +1467,10 @@ public:
                 return 0;
             }
 
+            if (send_message_end >= send_messages.size()){
+                return 0;
+            }
+
             send_message_start = send_message_end;
             ssize_t expected_send_message_end = send_message_end + received_packets;
             if (expected_send_message_end >= send_messages.size()){
@@ -1577,7 +1581,7 @@ public:
                         send_message_end = send_messages.size();
                     }else{
                         // send_message_end <= sentpkts <= send_messages.size()
-                        sent_packet_range.second = send_hdrs.at(send_message_end - 1)->pkt_num;
+                        sent_packet_range.second = send_hdrs.at(sentpkts - 1)->pkt_num;
                         send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
@@ -1590,7 +1594,8 @@ public:
                     }
                 }
             }
-
+            send_phrase = true;
+            start_ = send_message_start;
             written_len_ = send_message_end - send_message_start;
         }
 
@@ -1645,13 +1650,6 @@ public:
             last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
         }*/
 	    //std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
-        if (sent_packet_range.second != send_connection_difference){
-            for (auto i = 1 ; i < (send_message_end - 1); i++){
-                if (send_hdrs.at(i)->difference == send_connection_difference){
-                    sent_packet_range.second = send_hdrs.at(i)->pkt_num;
-                }
-            }
-        }
         
 
         if (send_message_end >= send_messages.size()){
