@@ -674,9 +674,9 @@ public:
     int pre_process_application_packet(uint8_t* data, size_t buf_len, uint32_t &off, uint64_t &pn){
         auto result = reinterpret_cast<Header *>(data)->ty;
         pn = reinterpret_cast<Header *>(data)->pkt_num;
-        auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
+        // auto pkt_priorty = reinterpret_cast<Header *>(data)->priority;
         off = reinterpret_cast<Header *>(data)->offset;
-        auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
+        // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
         Difference_len pkt_difference = reinterpret_cast<Header *>(data)->difference;
         auto pkt_seq = reinterpret_cast<Header *>(data)->seq;
 
@@ -711,7 +711,7 @@ public:
 
             // Debug
             if (recv_dic.find(off) != recv_dic.end()){
-                std::cout<<"[Error] same offset:"<<off<<std::endl;
+                // std::cout<<"[Error] same offset:"<<off<<std::endl;
                 // RRD.show();
                 // _Exit(0);
                 receive_pktnum2offset.insert(std::make_pair(pn, std::make_pair(off,0)));
@@ -753,7 +753,7 @@ public:
 	    // std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
 	    // std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
         bool loss_check = false;
-        size_t received_num = 0;
+        // size_t received_num = 0;
 
         bool is_last_ack = false;
 
@@ -773,7 +773,7 @@ public:
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
                 // std::cout<<"pn:"<<check_pn<<", offset:"<<check_offset<<" received"<<std::endl;
-                received_num++;
+                // received_num++;
                 // if (check_pn <= last_cwnd_copy.second && check_pn >= last_cwnd_copy.first){
                 //     received_packets++;
                 //     // remove acked packet number avoding duplicate partial sending.
@@ -817,7 +817,7 @@ public:
                     partial_send = false;
                     update_rtt();
                     // send_pkt_duration.erase(pkt_num);
-                    send_range = std::make_pair(1, 0);
+                    // send_range = std::make_pair(1, 0);
                     if (!loss_check){
                         recovery.update_win(true, 1);
                     }else{
@@ -1147,9 +1147,7 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                if (data_gotten){
-                    data_preparation();
-                }
+                data_preparation();
                 result = 4;
             }else{
                 if (partial_send){
@@ -1193,9 +1191,7 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                if(data_gotten){
-                    data_preparation();
-                }
+                data_preparation();
                 result = 1;
             }else{
                 // no time out, sender waits for the partial acknowldege or total acknowldege.
@@ -1492,7 +1488,6 @@ public:
         //std::cout<<"first:"<<sent_packet_range.first<<", second:"<<sent_packet_range.second<<std::endl;
         if (data_gotten){
             data_gotten = false;
-            data_preparation();
         }
 	    // std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
         
@@ -1509,7 +1504,6 @@ public:
         received_packets = 0;
         partial_send_packets = 0;
         send_message_start = 0;
-        //send_buffer.data_clear();
         send_buffer.manage_recovery();
         if (!send_buffer.is_empty()){
             // Add cwnd expectation function as per last real cwnd.
@@ -1548,7 +1542,6 @@ public:
         data_preparation();
         send_message_start = 0;
         send_message_end = 0;
-        //send_buffer.data_clear();
     }
 
     void mmsg_rearrange(){
@@ -1593,7 +1586,6 @@ public:
     }
 
     ssize_t send_first_message(){
-        auto send_seq = 0;
         // consider add ack message at the end of the flow.
         size_t add_one = 0;
         
@@ -1621,16 +1613,13 @@ public:
         */ 
         for (auto i = 0; ; ++i){
             if (i == 0){
-                send_seq = pkt_num_spaces.at(1).updatepktnum();
-                last_elicit_ack_pktnum = send_seq;
+                last_elicit_ack_pktnum = pkt_num_spaces.at(1).updatepktnum();
             }
             ssize_t out_len = 0; 
             Offset_len out_off = 0;
             bool s_flag = false;
-            auto pn = 0;
-            auto priority = 0;
             
-            pn = pkt_num_spaces.at(0).updatepktnum();
+            auto pn = pkt_num_spaces.at(0).updatepktnum();
 
             if(i == 0){
                 first_pn = pn;
@@ -1649,10 +1638,10 @@ public:
                 /// tmp
                 sent_count += 1;
                 
-                priority = priority_calculation(out_off);
-                Type ty = Type::Application;
+                auto priority = priority_calculation(out_off);
+                // Type ty = Type::Application;
         
-                std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, 0, send_connection_difference, (Packet_num_len)out_len);
+                std::shared_ptr<Header> hdr= std::make_shared<Header>(Type::Application, pn, priority, out_off, last_elicit_ack_pktnum, 0, send_connection_difference, (Packet_num_len)out_len);
                 send_hdrs.emplace_back(hdr);
                 send_iovecs[2*i].iov_base = (void *)hdr.get();
                 send_iovecs[2*i].iov_len = HEADER_LENGTH;
@@ -1666,7 +1655,7 @@ public:
                     sent_dic[out_off] = priority;
                 }
                 
-                record2ack_pktnum.push_back(pn);
+                // record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
                 send_messages[i].msg_hdr.msg_iov = &send_iovecs[2 * i];
                 send_messages[i].msg_hdr.msg_iovlen = 2;
@@ -1695,13 +1684,13 @@ public:
         sent_packet_range_cache2.first = 0;
         sent_packet_range_cache2.second = 0;
 
-        auto index = 0;
+       
         auto ioves_size = send_iovecs.size();
         auto message_size = send_messages.size();
         send_iovecs.resize(ioves_size + 1);
         send_messages.resize(message_size + 1);
         size_t result = 0;
-        result = send_elicit_ack_message_pktnum_new2(send_seq);
+        result = send_elicit_ack_message_pktnum_new2(last_elicit_ack_pktnum);
 
         send_iovecs[ioves_size].iov_base = send_ack.data();
         send_iovecs[ioves_size].iov_len = send_ack.size();
@@ -1843,8 +1832,7 @@ public:
         written_data_len += written_len;
 
         // Jun 27th 5:13 pm
-	    //std::cout<<"sendmmsg: send_messages.size:"<<send_messages.size()<<", send_hdrs.size:"<<send_hdrs.size()<<", send_iovecs.size:"<<send_iovecs.size()<<std::endl;
-        //set_handshake();
+	    // std::cout<<"sendmmsg: send_messages.size:"<<send_messages.size()<<", send_hdrs.size:"<<send_hdrs.size()<<", send_iovecs.size:"<<send_iovecs.size()<<std::endl;
         send_signal = false;
         partial_signal = false;
         partial_signal2 = false;
@@ -1874,7 +1862,7 @@ public:
         auto pn = elicit_acknowledege_packet_number;
 	    // std::cout<<"acknowledge pn:"<<pn<<std::endl;
         Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
-	    //std::cout<<"ack send_connection_difference:"<<(int)send_connection_difference<<std::endl;
+	    // std::cout<<"ack send_connection_difference:"<<(int)send_connection_difference<<std::endl;
         // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
         send_ack.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
@@ -1884,10 +1872,6 @@ public:
 
         delete hdr; 
         hdr = nullptr; 
-
-        // send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
-        // std::cout<<"start:"<<start_pktnum<<", end:"<<end_pktnum<<std::endl;
-        send_range = std::make_pair(start_pktnum, end_pktnum);
 
         pktlen += HEADER_LENGTH;
         return pktlen;
@@ -2212,7 +2196,7 @@ public:
 
         send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
         // std::cout<<"start:"<<start_pktnum<<", end:"<<end_pktnum<<std::endl;
-        send_range = std::make_pair(start_pktnum, end_pktnum);
+        // send_range = std::make_pair(start_pktnum, end_pktnum);
 
         pktlen += HEADER_LENGTH;
         return pktlen;
