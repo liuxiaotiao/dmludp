@@ -947,7 +947,7 @@ public:
                 continue;
             }
 
-            if (result < expect_win && (current_buffer_pos + 1) < data_buffer.size();){
+            if (result < expect_win && (current_buffer_pos + 1) < data_buffer.size()){
                 continue;
             }
             
@@ -1488,9 +1488,7 @@ public:
         //std::cout<<"first:"<<sent_packet_range.first<<", second:"<<sent_packet_range.second<<std::endl;
         if (data_gotten){
             data_gotten = false;
-            if (data_buffer.at(current_buffer_pos).left > 0){
-                data2buffer(data_buffer.at(current_buffer_pos));
-            }
+            data_preparation();
         }
 	    //std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
         
@@ -1544,10 +1542,7 @@ public:
             next_range.first = 0;
             next_range.second = 0;
         }
-
-        if (data_buffer.at(current_buffer_pos).left > 0){
-            data2buffer(data_buffer.at(current_buffer_pos));
-        }
+        data_preparation();
         send_message_start = 0;
         send_message_end = 0;
         //send_buffer.data_clear();
