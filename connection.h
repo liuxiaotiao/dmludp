@@ -937,27 +937,64 @@ public:
         written_data_once = 0;
     }
  
+    // void data_preparation(){
+    //     data2buffer(data_buffer.at(current_buffer_pos));
+    // }
+
     void data_preparation(){
-        data2buffer(data_buffer.at(current_buffer_pos));
+        ssize_t expect_win = recovery.cwnd_expect();
+        if (!send_buffer.is_empty()){
+            expect_win *= 2;
+        }
+        for (; current_buffer_pos < data_buffer.size(); current_buffer_pos++){
+            auto result = data2buffer(data_buffer.at(current_buffer_pos));
+            expect_win -= result;
+            if(expect_win <= 0){
+                break;
+            }
+
+            if (result == -1){
+                continue;
+            }
+
+            if (result < expect_win && (current_buffer_pos + 1)<data_buffer.size();){
+                continue;
+            }
+            
+        }
+        
     }
 
     void recovery_send_buffer(){
         send_buffer.recovery_data();
     }
 
-    ssize_t data2buffer(sbuffer &send_data){
+    // ssize_t data2buffer(sbuffer &send_data){
+    //     ssize_t result = 0;
+    //     size_t out_len = 0;
+    //     if (send_buffer.is_empty()){
+    //         result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, recovery.cwnd_expect(), out_len);
+    //     }else{
+    //         if (send_data.left == 0){
+    //             result = -1;
+    //         }else{
+    //             result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, recovery.cwnd_expect() * 2, out_len);
+    //             result = 0;
+    //         }
+    //     }
+    //     // std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
+    //     return result;
+    // }
+     ssize_t data2buffer(sbuffer &send_data, ssize_t expected_cwnd_){
         ssize_t result = 0;
         size_t out_len = 0;
-        if (send_buffer.is_empty()){
-            result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, recovery.cwnd_expect(), out_len);
+
+        if (send_data.left == 0){
+            result = -1;
         }else{
-            if (send_data.left == 0){
-                result = -1;
-            }else{
-                result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, recovery.cwnd_expect() * 2, out_len);
-                result = 0;
-            }
+            result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, expected_cwnd_, out_len);
         }
+
         // std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
         return result;
     }
@@ -1010,9 +1047,10 @@ public:
                     send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
                 }
 		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
-                if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
+                // if (data_buffer.at(current_buffer_pos).left > 0){
+                //     data2buffer(data_buffer.at(current_buffer_pos));
+                // }
+                data_preparation();
                 result = 4;
                 // partial_send_packets = 0;
                 // received_packets = 0;
@@ -1023,9 +1061,10 @@ public:
                     can_send = false;
                     congestion_window = recovery.cwnd();
                     send_buffer.update_max_data(congestion_window);
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                     result = 6;
                     // received_packets = 0;
                 }else{
@@ -1043,9 +1082,10 @@ public:
                     }else{
                         send_buffer.update_max_data(congestion_window);
                     }
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                     for (auto x = send_unack_packet_record.begin(); x != send_unack_packet_record.end(); x++){
                         if (pktnum2offset.find(*x) != pktnum2offset.end()){
                             auto delete_offset = pktnum2offset[*x];
@@ -1074,9 +1114,10 @@ public:
                 }else{
                     send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
                 }
-                if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
+                // if (data_buffer.at(current_buffer_pos).left > 0){
+                //     data2buffer(data_buffer.at(current_buffer_pos));
+                // }
+                data_preparation();
                 result = 1;
                 // partial_send_packets = 0;
                 // received_packets = 0;
@@ -1085,9 +1126,10 @@ public:
                 if (partial_send){
                     result = 2;
                     send_buffer.update_max_data(received_packets * MAX_SEND_UDP_PAYLOAD_SIZE);
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                     // received_packets = 0;
                 }else{
                     data_preparation();
@@ -1128,9 +1170,10 @@ public:
             if (can_send){
                 congestion_window = recovery.cwnd();
 		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
-                if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
+                // if (data_buffer.at(current_buffer_pos).left > 0){
+                //     data2buffer(data_buffer.at(current_buffer_pos));
+                // }
+                data_preparation();
                 result = 4;
             }else{
                 if (partial_send){
@@ -1141,9 +1184,10 @@ public:
                     congestion_window = recovery.cwnd();
 		            // std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
                     // send_buffer.update_max_data(congestion_window);
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                     result = 6;
                     // received_packets = 0;
                 }else{
@@ -1152,10 +1196,10 @@ public:
                     can_send = false;
                     congestion_window = recovery.cwnd();
                     // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
-
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
                     }else{
@@ -1170,17 +1214,19 @@ public:
                 // no time out, sender can send data.
                 congestion_window = recovery.cwnd();
 		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
-                if (data_buffer.at(current_buffer_pos).left > 0){
-                    data2buffer(data_buffer.at(current_buffer_pos));
-                }
+                // if (data_buffer.at(current_buffer_pos).left > 0){
+                //     data2buffer(data_buffer.at(current_buffer_pos));
+                // }
+                data_preparation();
                 result = 1;
             }else{
                 // no time out, sender waits for the partial acknowldege or total acknowldege.
                 if (partial_send){
                     result = 2;
-                    if (data_buffer.at(current_buffer_pos).left > 0){
-                        data2buffer(data_buffer.at(current_buffer_pos));
-                    }
+                    // if (data_buffer.at(current_buffer_pos).left > 0){
+                    //     data2buffer(data_buffer.at(current_buffer_pos));
+                    // }
+                    data_preparation();
                 }else{
                     data_preparation();
                     result = 3;
@@ -1217,6 +1263,13 @@ public:
                     std::cout << std::endl;
                 }
 	        }*/
+            for (auto i = send_message_start; i < send_message_end; i++){
+                if (send_messages.at(i).msg_hdr.msg_iovlen == 2){
+                    std::cout<<"packet_number:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->pkt_num
+                        <<", offser:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->offset
+                        <<", difference:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->difference<<std::endl;
+                }
+            }
     /*	for (auto k =send_message_start; k<send_messages.size();k++) {
             for (size_t i = 0; i < send_messages[k].msg_hdr.msg_iovlen; ++i) {
                 if (send_messages[k].msg_hdr.msg_iov[i].iov_len == 26){
@@ -1891,21 +1944,22 @@ public:
         auto message_size = send_messages.size();
         send_iovecs.resize(ioves_size + 1);
         send_messages.resize(message_size + 1);
-        while (true){
-            size_t result = 0;
-            result = send_elicit_ack_message_pktnum_new(send_ack, send_seq);
-            if (result == -1){
-                break;
-            }
-            send_iovecs[ioves_size].iov_base = send_ack.data();
-            send_iovecs[ioves_size].iov_len = send_ack.size();
+        // while (true){
+        size_t result = 0;
+        // result = send_elicit_ack_message_pktnum_new2(send_ack, send_seq);
+        result = send_elicit_ack_message_pktnum_new2(send_seq);
+        // if (result == -1){
+        //     break;
+        // }
+        send_iovecs[ioves_size].iov_base = send_ack.data();
+        send_iovecs[ioves_size].iov_len = send_ack.size();
 
-            send_messages[message_size].msg_hdr.msg_iov = &send_iovecs[ioves_size];
-            send_messages[message_size].msg_hdr.msg_iovlen = 1;
-            ioves_size++;
-            message_size++;
-            index++;
-        }
+        send_messages[message_size].msg_hdr.msg_iov = &send_iovecs[ioves_size];
+        send_messages[message_size].msg_hdr.msg_iovlen = 1;
+        ioves_size++;
+        message_size++;
+        index++;
+        // }
 
         if (written_len){
             stop_ack = false;
@@ -2522,14 +2576,14 @@ public:
             }
         }
 
-        bool test_result = !std::any_of(data_buffer.begin(), data_buffer.end(), [](const sbuffer& i) {
-            return i.left != 0;
-        });
+        // bool test_result = !std::any_of(data_buffer.begin(), data_buffer.end(), [](const sbuffer& i) {
+        //     return i.left != 0;
+        // });
         
-        if (test_result != result){
-            std::cout<<"test_result != result"<<std::endl;
-            _Exit(0);
-        }
+        // if (test_result != result){
+        //     std::cout<<"test_result != result"<<std::endl;
+        //     _Exit(0);
+        // }
 
         if (!send_buffer.is_empty()){
             result = false;
@@ -2731,16 +2785,6 @@ public:
                     // ack_record[pn] = 1;
                 }
             }
-        }
-        /*for (auto pn = start; pn <= end; pn++){
-            if (receive_pktnum2offset.find(pn) != receive_pktnum2offset.end()){
-                receive_result.push_back(0);
-                // ack_record[pn] = 0;
-            }else{
-                receive_result.push_back(1);
-                // ack_record[pn] = 1;
-            }          
-        }*/
         
         // RRD.add_acknowledeg_info(send_num, std::move(ack_record));
     }

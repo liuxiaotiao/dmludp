@@ -33,6 +33,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
         uint64_t removed;
 
+        uint64_t written_packet;
+
         ssize_t sent;
 
         // scenario: left not received data is more than cwnd.
@@ -57,7 +59,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
         sent(0),
         last_pos(0),
         total_bytes(0),
-	    written_bytes(0){};
+	    written_bytes(0),
+        written_packet(0){};
 
         ~SendBuf(){};
 
@@ -65,22 +68,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             used_length = len();
             return ((ssize_t)max_data - (ssize_t)used_length);
         };
-
-	    void data_clear(){
-            ssize_t tmp_pos = pos;
-            while(tmp_pos >= 0){
-                auto check = received_offset.find(std::get<0>(data.at(tmp_pos)));
-                if(check == received_offset.end()){
-                    tmp_pos--;
-                }else{
-                    // std::cout<<"Send buffer receive offset:"<<std::get<0>(data.at(tmp_pos))<<std::endl;
-                    data.erase(data.begin() + tmp_pos);
-                    pos--;
-                    // std::cout<<"pos--:"<<pos<<std::endl;
-		            tmp_pos--;
-                }
-            }
-        }
 
         bool written_complete(){
             return written_bytes == total_bytes;
@@ -115,6 +102,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                         break;
                     }else{
                         data.erase(data.begin() + pos);
+                        removed++;
                         // std::cout<<"erase size:"<<data.size()<<std::endl;
                     }
                     //}
@@ -146,6 +134,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             received_offset.clear();
             received_check.clear();
 	        written_bytes = 0;
+            removed = 0;
+            written_packet = 0;
         };
 
         /// Returns the largest offset of data buffered.
@@ -226,6 +216,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                 // data.push_back(std::make_pair(off, meta_));
                 // std::cout<<"send buffer off:"<<off<<std::endl;
                 data.emplace_back(off, src + start_off + written_length_, (uint64_t)packet_len);
+                written_packet++;
                 length += (uint64_t) packet_len;
                 used_length += packet_len;
                 written_length_ += packet_len;
