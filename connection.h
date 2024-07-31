@@ -1856,28 +1856,28 @@ public:
 
         }
 
-        if (first_check){
-            current_range.first = first_pn;
-            last_range.first = first_pn;
-            last_last_range.first = first_pn;
-            current_range.second = end_pn;
-            last_range.second = end_pn;
-            last_last_range.second = end_pn;
-        }else{
-            if (last_cwnd_copy.first != current_range.first && last_cwnd_copy.second != current_range.second){
-                // There is partial sending before send_mmsg
-                current_range.second = end_pn;
-            }else{
-                // no partial sending.
-                last_last_range.first = last_range.first;
-                last_range.first = current_range.first;
-                current_range.first = first_pn;
+        // if (first_check){
+        //     current_range.first = first_pn;
+        //     last_range.first = first_pn;
+        //     last_last_range.first = first_pn;
+        //     current_range.second = end_pn;
+        //     last_range.second = end_pn;
+        //     last_last_range.second = end_pn;
+        // }else{
+        //     if (last_cwnd_copy.first != current_range.first && last_cwnd_copy.second != current_range.second){
+        //         // There is partial sending before send_mmsg
+        //         current_range.second = end_pn;
+        //     }else{
+        //         // no partial sending.
+        //         last_last_range.first = last_range.first;
+        //         last_range.first = current_range.first;
+        //         current_range.first = first_pn;
                 
-                last_last_range.second = last_range.second;
-                last_range.second = current_range.second;
-                current_range.second = end_pn;
-            }
-        }
+        //         last_last_range.second = last_range.second;
+        //         last_range.second = current_range.second;
+        //         current_range.second = end_pn;
+        //     }
+        // }
 
         sent_packet_range.first = first_pn;
         sent_packet_range.second = end_pn;
@@ -1891,21 +1891,22 @@ public:
         auto message_size = send_messages.size();
         send_iovecs.resize(ioves_size + 1);
         send_messages.resize(message_size + 1);
-        while (true){
+        // while (true){
             size_t result = 0;
-            result = send_elicit_ack_message_pktnum_new(send_ack, send_seq);
-            if (result == -1){
-                break;
-            }
+            // result = send_elicit_ack_message_pktnum_new(send_ack, send_seq);
+            // if (result == -1){
+            //     break;
+            // }
+	    result = send_elicit_ack_message_pktnum_new2(send_seq);
             send_iovecs[ioves_size].iov_base = send_ack.data();
             send_iovecs[ioves_size].iov_len = send_ack.size();
 
             send_messages[message_size].msg_hdr.msg_iov = &send_iovecs[ioves_size];
             send_messages[message_size].msg_hdr.msg_iovlen = 1;
-            ioves_size++;
-            message_size++;
-            index++;
-        }
+        //     ioves_size++;
+        //     message_size++;
+        //     index++;
+        // }
 
         if (written_len){
             stop_ack = false;
