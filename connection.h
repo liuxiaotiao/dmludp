@@ -1147,7 +1147,7 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                data_preparation();
+                // data_preparation();
                 result = 4;
             }else{
                 if (partial_send){
@@ -1173,7 +1173,7 @@ public:
                     // if (data_buffer.at(current_buffer_pos).left > 0){
                     //     data2buffer(data_buffer.at(current_buffer_pos));
                     // }
-                    data_preparation();
+                    // data_preparation();
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
                     }else{
@@ -1191,7 +1191,9 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                data_preparation();
+                if(data_gotten){
+                    data_preparation();
+                }
                 result = 1;
             }else{
                 // no time out, sender waits for the partial acknowldege or total acknowldege.
