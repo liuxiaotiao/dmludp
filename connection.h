@@ -937,7 +937,7 @@ public:
             expect_win *= 2;
         }
         for (; current_buffer_pos < data_buffer.size(); current_buffer_pos++){
-            auto result = data2buffer(data_buffer.at(current_buffer_pos));
+            auto result = data2buffer(data_buffer.at(current_buffer_pos), expect_win);
             expect_win -= result;
             if(expect_win <= 0){
                 break;
@@ -947,7 +947,7 @@ public:
                 continue;
             }
 
-            if (result < expect_win && (current_buffer_pos + 1)<data_buffer.size();){
+            if (result < expect_win && (current_buffer_pos + 1) < data_buffer.size();){
                 continue;
             }
             
