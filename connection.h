@@ -54,7 +54,6 @@ struct SendInfo {
 
     /// The remote address the packet should be sent to.
     sockaddr_storage to;
-
 };
 
 struct RecvInfo {
@@ -167,7 +166,6 @@ public:
             std::cout << "[Compare] rx_length:" << it->first << " "<<(it->first == it->second)<< " rlen:" << it->second << std::endl;
         }   
         std::cout<<std::endl;
-
     }
 
 };
@@ -344,6 +342,8 @@ public:
     // multiple partial ack, and timeout
     bool partial_signal2;
 
+    bool has_prepared;
+
     ////////////////////////////////
     /*
     If using sendmsg send udp data, replace mmsghdr with msghdr.
@@ -445,7 +445,8 @@ public:
     send_phrase(true),
     difference_flag(false),
     real_sent(0),
-    expect_sent(0)
+    expect_sent(0),
+    has_prepared(false)
     {
         send_ack.reserve(42);
         init();
@@ -950,7 +951,6 @@ public:
             if (result < expect_win && (current_buffer_pos + 1) < data_buffer.size()){
                 continue;
             }
-            
         }
         
     }
@@ -1147,7 +1147,7 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                data_preparation();
+                // data_preparation();
                 result = 4;
             }else{
                 if (partial_send){
@@ -1161,7 +1161,7 @@ public:
                     // if (data_buffer.at(current_buffer_pos).left > 0){
                     //     data2buffer(data_buffer.at(current_buffer_pos));
                     // }
-                    data_preparation();
+                    // data_preparation();
                     result = 6;
                     // received_packets = 0;
                 }else{
@@ -1173,7 +1173,7 @@ public:
                     // if (data_buffer.at(current_buffer_pos).left > 0){
                     //     data2buffer(data_buffer.at(current_buffer_pos));
                     // }
-                    data_preparation();
+                    // data_preparation();
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
                     }else{
@@ -1191,7 +1191,7 @@ public:
                 // if (data_buffer.at(current_buffer_pos).left > 0){
                 //     data2buffer(data_buffer.at(current_buffer_pos));
                 // }
-                data_preparation();
+                // data_preparation();
                 result = 1;
             }else{
                 // no time out, sender waits for the partial acknowldege or total acknowldege.
@@ -1200,7 +1200,7 @@ public:
                     // if (data_buffer.at(current_buffer_pos).left > 0){
                     //     data2buffer(data_buffer.at(current_buffer_pos));
                     // }
-                    data_preparation();
+                    // data_preparation();
                 }else{
                     data_preparation();
                     result = 3;
@@ -1490,16 +1490,15 @@ public:
             data_gotten = false;
             data_preparation();
         }
-	    //std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
+	    // std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
         
-
         if (send_message_end >= send_messages.size()){
             send_hdrs.clear();
             send_messages.clear();
             send_iovecs.clear(); 
         }else{
             mmsg_rearrange();
-	    //std::cout<<"mmsg_rearrange(), send_messages.size:"<<send_messages.size()<<std::endl;
+            // std::cout<<"mmsg_rearrange(), send_messages.size:"<<send_messages.size()<<std::endl;
         }
 
         
