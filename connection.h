@@ -1237,13 +1237,13 @@ public:
                 std::cout << std::endl;
             }
         }*/
-        for (auto i = send_message_start; i < send_message_end; i++){
-            if (send_messages.at(i).msg_hdr.msg_iovlen == 2){
-                std::cout<<"packet_number:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->pkt_num
-                    <<", offser:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->offset
-                    <<", difference:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->difference<<std::endl;
-            }
-        }
+        // for (auto i = send_message_start; i < send_message_end; i++){
+        //     if (send_messages.at(i).msg_hdr.msg_iovlen == 2){
+        //         std::cout<<"packet_number:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->pkt_num
+        //             <<", offser:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->offset
+        //             <<", difference:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->difference<<std::endl;
+        //     }
+        // }
         /*for (auto k =send_message_start; k<send_messages.size();k++) {
             for (size_t i = 0; i < send_messages[k].msg_hdr.msg_iovlen; ++i) {
                 if (send_messages[k].msg_hdr.msg_iov[i].iov_len == 26){
