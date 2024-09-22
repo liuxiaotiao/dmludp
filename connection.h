@@ -449,6 +449,15 @@ public:
     has_prepared(false)
     {
         send_ack.reserve(42);
+        Header* hdr = reinterpret_cast<Header*>(send_ack.data());
+        hdr->ty = Type::ElicitAck;
+        hdr->pkt_num = 0;;
+        hdr->priority = 0;
+        hdr->offset = 0;
+        hdr->seq = 0;
+        hdr->ack_time = 0;
+        hdr->difference = 0;
+        hdr->pkt_length = 2 * sizeof(uint64_t);
         init();
     };
 
@@ -991,133 +1000,6 @@ public:
         return timeout_;
     }
 
-    ssize_t check_status(){
-        /*
-        1. acknowledge within timer, no time out. can_send: true, timeout: false.
-        2. no acknowledge packet arrive, no time out. start preparing send_buffer. can_send: false, timeout: false.
-        3. partial acknowlege packet arrive, no time out. send equivalent packets and preparing send buffer. can
-        4. time out. timeout true
-        */
-        ssize_t result = 0;
-        if (on_timeout()){
-            if (partial_signal && !can_send){
-                recovery.update_win(true);
-                can_send = true;
-                partial_send = false;
-            }
-
-            if (partial_signal2 && !can_send && !partial_send){
-                recovery.update_win(true);
-                can_send = true;
-                partial_send = false;
-            }
-
-            // Time out
-            if (can_send){
-                congestion_window = recovery.cwnd();
-                if(partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE >= congestion_window){
-                    send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
-                }else{
-                    send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
-                }
-		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
-                // if (data_buffer.at(current_buffer_pos).left > 0){
-                //     data2buffer(data_buffer.at(current_buffer_pos));
-                // }
-                data_preparation();
-                result = 4;
-                // partial_send_packets = 0;
-                // received_packets = 0;
-            }else{
-                if (partial_send){
-                    // Partial acknowldege will be regarded as loss.
-                    recovery.update_win(true);
-                    can_send = false;
-                    congestion_window = recovery.cwnd();
-                    send_buffer.update_max_data(congestion_window);
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    data_preparation();
-                    result = 6;
-                    // received_packets = 0;
-                }else{
-                    // Real time out, congestion control window will grow fron initial size.
-                    recovery.set_recovery(true);
-                    can_send = false;
-                    congestion_window = recovery.cwnd();
-                    // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
-                    if (partial_send){
-                        if(partial_send_packets * MAX_SEND_UDP_PAYLOAD_SIZE >= congestion_window){
-                            send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
-                        }else{
-                            send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
-                        }
-                    }else{
-                        send_buffer.update_max_data(congestion_window);
-                    }
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    data_preparation();
-                    for (auto x = send_unack_packet_record.begin(); x != send_unack_packet_record.end(); x++){
-                        if (pktnum2offset.find(*x) != pktnum2offset.end()){
-                            auto delete_offset = pktnum2offset[*x];
-                        }
-                    }
-
-                    if(congestion_window == last_congestion_window){
-                        epoll_delay++;
-                    }else{
-                        epoll_delay = 0;
-                    }
-
-                    result = 5;
-                    // partial_send_packets = 0;
-                    // received_packets = 0;
-                }
-            }
-        }else{
-            if (can_send){
-                //TODO: set cwnd to send buffer
-                // no time out, sender can send data.
-                congestion_window = recovery.cwnd();
-		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
-                if(partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE >= congestion_window){
-                    send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
-                }else{
-                    send_buffer.update_max_data(congestion_window - partial_send_packets *  MAX_SEND_UDP_PAYLOAD_SIZE);
-                }
-                // if (data_buffer.at(current_buffer_pos).left > 0){
-                //     data2buffer(data_buffer.at(current_buffer_pos));
-                // }
-                data_preparation();
-                result = 1;
-                // partial_send_packets = 0;
-                // received_packets = 0;
-            }else{
-                // no time out, sender waits for the partial acknowldege or total acknowldege.
-                if (partial_send){
-                    result = 2;
-                    send_buffer.update_max_data(received_packets * MAX_SEND_UDP_PAYLOAD_SIZE);
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    data_preparation();
-                    // received_packets = 0;
-                }else{
-                    data_preparation();
-                    result = 3;
-                }
-            }
-        }
-        // std::cout<<"check_status:"<<result<<std::endl;
-      
-        last_congestion_window = congestion_window;
-
-        return result;
-    }
-
     // check_status2() works with send_message()
     ssize_t check_status2(){
         /*
@@ -1127,7 +1009,8 @@ public:
         4. time out. timeout true
         */
         ssize_t result = 0;
-        if (on_timeout()){
+        bool timeout_ = on_timeout();
+        if (timeout_){
             if (partial_signal && !can_send){
                 recovery.update_win(true);
                 can_send = true;
@@ -1144,9 +1027,6 @@ public:
             if (can_send){
                 congestion_window = recovery.cwnd();
 		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
-                // if (data_buffer.at(current_buffer_pos).left > 0){
-                //     data2buffer(data_buffer.at(current_buffer_pos));
-                // }
                 if (data_gotten){
                     data_preparation();
                 }
@@ -1154,28 +1034,17 @@ public:
             }else{
                 if (partial_send){
                     // Partial acknowldege will be regarded as loss.
-//                  recovery.update_win(true);
                     recovery.set_recovery(true);
       			    can_send = false;
                     congestion_window = recovery.cwnd();
 		            // std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
-                    // send_buffer.update_max_data(congestion_window);
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    // data_preparation();
                     result = 6;
-                    // received_packets = 0;
                 }else{
                     // Real time out, congestion control window will grow fron initial size.
                     recovery.set_recovery(true);
                     can_send = false;
                     congestion_window = recovery.cwnd();
                     // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    // data_preparation();
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
                     }else{
@@ -1190,9 +1059,6 @@ public:
                 // no time out, sender can send data.
                 congestion_window = recovery.cwnd();
 		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
-                // if (data_buffer.at(current_buffer_pos).left > 0){
-                //     data2buffer(data_buffer.at(current_buffer_pos));
-                // }
                 if (data_gotten){
                     data_preparation();
                 }
@@ -1201,10 +1067,6 @@ public:
                 // no time out, sender waits for the partial acknowldege or total acknowldege.
                 if (partial_send){
                     result = 2;
-                    // if (data_buffer.at(current_buffer_pos).left > 0){
-                    //     data2buffer(data_buffer.at(current_buffer_pos));
-                    // }
-                    // data_preparation();
                 }else{
                     data_preparation();
                     result = 3;
@@ -1225,41 +1087,7 @@ public:
 	        std::cout<<"send buffer data size:"<<send_buffer.data.size()<<std::endl;
             _Exit(0);
         }
-        /*std::cout<<"ssend_message_start:"<<send_message_start<<", end_message_end:"<<send_message_end<<std::endl;
-        if(send_message_end%2==0){
-            for(auto i = 0; i < send_message_end; i++){
-                for (size_t j = 0; j < send_iovecs[2*i].iov_len; ++j) {
-                    std::cout << (int)static_cast<uint8_t*>(send_iovecs[2*i].iov_base)[j]<<" ";
-                }
-                std::cout << std::endl;
-            }
-        }else{
-            for(auto i = 0; i < send_message_end - 1; i++){
-                for (size_t j = 0; j < send_iovecs[2*i].iov_len; ++j) {
-                    std::cout << (int)static_cast<uint8_t*>(send_iovecs[2*i].iov_base)[j]<<" ";
-                }
-                std::cout << std::endl;
-            }
-        }*/
-        // for (auto i = send_message_start; i < send_message_end; i++){
-        //     if (send_messages.at(i).msg_hdr.msg_iovlen == 2){
-        //         std::cout<<"packet_number:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->pkt_num
-        //             <<", offser:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->offset
-        //             <<", difference:"<<reinterpret_cast<Header *>(static_cast<uint8_t*>(send_messages[i].msg_hdr.msg_iov[0].iov_base))->difference<<std::endl;
-        //     }
-        // }
-        /*for (auto k =send_message_start; k<send_messages.size();k++) {
-            for (size_t i = 0; i < send_messages[k].msg_hdr.msg_iovlen; ++i) {
-                if (send_messages[k].msg_hdr.msg_iov[i].iov_len == 26){
-			    std::cout<<"k:"<<k<<" ";
-                    for(auto j = 0; j < 26; j++){
-                        std::cout << (int)(static_cast<uint8_t*>(send_messages[k].msg_hdr.msg_iov[i].iov_base))[j]<< " ";
-                    }
-                    std::cout<<std::endl;
-                }
-            }
-        }*/
-        // auto index = send_message_start;
+       
         return send_messages;
     }
 
@@ -1865,17 +1693,29 @@ public:
 
         auto pn = elicit_acknowledege_packet_number;
 	    // std::cout<<"acknowledge pn:"<<pn<<std::endl;
-        Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
+        // Header* hdr = new Header(ty, pn, 0, 0, pn, 0, send_connection_difference, pktlen);
 	    // std::cout<<"ack send_connection_difference:"<<(int)send_connection_difference<<std::endl;
         // std::cout<<"[Elicit] Elicit acknowledge packet num:"<<pn<<std::endl;
         send_ack.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
-        hdr->to_bytes(send_ack);
-        memcpy(send_ack.data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
-        memcpy(send_ack.data() + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
+        // hdr->to_bytes(send_ack);
 
-        delete hdr; 
-        hdr = nullptr; 
+        Header* hdr = reinterpret_cast<Header*>(send_ack.data())
+        hdr->pkt_num = pn;
+        hdr->seq = pn;
+        hdr->difference = send_connection_difference;
+
+        uint64_t* start_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
+        *start_ptr = start_pktnum;
+        
+        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
+        *end_ptr = end_pktnum;
+        
+        // memcpy(send_ack.data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
+        // memcpy(send_ack.data() + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
+
+        // delete hdr; 
+        // hdr = nullptr; 
 
         pktlen += HEADER_LENGTH;
         return pktlen;
@@ -2329,6 +2169,8 @@ public:
         }
         psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);
         difference_flag = false;
+        delete hdr; 
+        hdr = nullptr; 
         return psize;
     }
 
@@ -2457,7 +2299,11 @@ public:
     
     Type write_pkt_type(){
         // let now = Instant::now();
-        if (rtt.count() == 0 && is_server == true){
+        // if (rtt.count() == 0 && is_server == true){
+        //     handshake_completed = true;
+        //     return Type::Handshake;
+        // }
+        if (rto.count() == 0 && is_server == true){
             handshake_completed = true;
             return Type::Handshake;
         }

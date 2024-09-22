@@ -19,6 +19,8 @@ const double BETA = 0.7;
 
 const double C = 0.4;
 
+const double ROLLBACK_THRESHOLD_PERCENT = 0.2;
+
 enum CongestionControlAlgorithm {
     /// CUBIC congestion control algorithm (default). `cubic` in a string form.
     NEWCUBIC = 1,
@@ -189,7 +191,7 @@ class Recovery{
                 
             }else{
                 // congestion_window *= BETA;
-                K = std::cbrt(W_max * BETA / C);
+                K = std::cbrt(W_max * (1-BETA) / C);
                 cubic_time = 1;
                 congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
                 W_last_max = W_max;
