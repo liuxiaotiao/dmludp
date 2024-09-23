@@ -114,12 +114,12 @@ inline size_t dmludp_get_error_sent(std::shared_ptr<Connection> conn){
     return conn->get_error_sent();
 }
 
-inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn, 
+inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
     std::vector<std::shared_ptr<Header>> &hdrs, 
-    std::vector<struct mmsghdr> &messages, 
+    std::vector<struct msghdr> &messages, 
     std::vector<struct iovec> &iovecs,
     std::vector<std::vector<uint8_t>> &out_ack){
-    return conn->send_mmsg(hdrs, messages, iovecs, out_ack);
+    return conn->send_msg(hdrs, messages, iovecs, out_ack);
 }
 
 // inline ssize_t dmludp_data_send_msg(std::shared_ptr<Connection> conn, 
@@ -130,11 +130,11 @@ inline ssize_t dmludp_data_send_mmsg(std::shared_ptr<Connection> conn,
 //     return conn->send_msg(hdrs, messages, iovecs, out_ack);
 // }
 
-inline ssize_t dmludp_data_send_partial_mmsg(std::shared_ptr<Connection> conn, 
+inline ssize_t dmludp_data_send_partial_msg(std::shared_ptr<Connection> conn, 
     std::vector<std::shared_ptr<Header>> &hdrs, 
-    std::vector<struct mmsghdr> &messages, 
+    std::vector<struct msghdr> &messages, 
     std::vector<struct iovec> &iovecs){
-    return conn->send_partial_mmsg(hdrs, messages, iovecs);
+    return conn->send_partial_msg(hdrs, messages, iovecs);
 }
 
 inline bool dmludp_transmission_complete(std::shared_ptr<Connection> conn){
