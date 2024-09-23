@@ -206,7 +206,7 @@ int main() {
                     for (auto index = 0; index < receive_number; index++){
                         auto rv = static_cast<uint8_t *>(msgs[index].msg_iov->iov_base)[0];
                         if (rv == 3){
-                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov->iov_len);
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov[0]->iov_len);
                         }
                         if(dmludp_conn_receive_complete(dmludp_connection)){
                             std::cout<<recv_time++<<" time receive complete"<<std::endl;
