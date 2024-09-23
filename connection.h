@@ -320,6 +320,8 @@ public:
 
     size_t received_packets;
 
+    std::set<size_t> received_packets_dic;
+
     // Record how many packet sent.
     size_t partial_send_packets;
 
@@ -635,34 +637,13 @@ public:
             }
 
             reset_single_receive_parameter(pkt_seq);
-            // send_num = pkt_seq;
-            
-            // Debug
-            // if (recv_dic.find(pkt_offset) != recv_dic.end()){
-            //     // std::cout<<"[Error] same offset:"<<pkt_offset<<std::endl;
-            //     // RRD.show();
-            //     // _Exit(0);
-            //     // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-            //     rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
-            //     // Debug
-            //     // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            // }else{
-            //     recv_count += 1;
-            //     // optimize to reduce copy time.
-                
-            //     // receive_pktnum2offset.insert(std::make_pair(pkt_num, pkt_offset));
-            //     // Debug
-            //     // recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
-            // }
+        
             if (recv_dic.find(pkt_offset) == recv_dic.end() && pkt_difference == receive_connection_difference){
                 rec_buffer.write(src + HEADER_LENGTH, pkt_len, pkt_offset);
                 recv_dic.insert(std::make_pair(pkt_offset, pkt_priorty));
             }
 
-            receive_pktnum2offset.insert(std::make_pair(pkt_num, std::make_pair(pkt_offset, 1)));
-            
-            // std::cout<<"receive buffer size:"<<rec_buffer.data.size()<<std::endl;
-                     
+            receive_pktnum2offset.insert(std::make_pair(pkt_num, std::make_pair(pkt_offset, 1)));                     
         }
 
         // In dmludp.h
@@ -743,21 +724,15 @@ public:
 
         uint8_t tmp_send_connection_difference = send_connection_difference + 1;
         if(send_connection_difference != pkt_difference){
-		    // std::cout<<"send_connection_difference != pkt_difference"<<std::endl;
             if (tmp_send_connection_difference == pkt_difference){
                 send_buffer.clear();
             }
             return;
         }
-	    // std::cout<<"send_connection_difference:"<<(int)send_connection_difference<<", packet connection:"<<(int)reinterpret_cast<Header *>(src)->difference<<std::endl;
         auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
         auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
-	    // std::cout<<"first_pkt:"<<first_pkt<<", end_pkt:"<<end_pkt<<std::endl;
-	    // std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
-	    // std::cout<<"last ack:"<<last_elicit_ack_pktnum<<std::endl;
-	    // std::cout<<"packet seq:"<<reinterpret_cast<Header *>(src)->seq<<std::endl;
+
         bool loss_check = false;
-        // size_t received_num = 0;
 
         bool is_last_ack = false;
 
@@ -765,9 +740,6 @@ public:
             is_last_ack = true;
         }
 
-	    //std::cout<<"pkt_num:"<<pkt_num<<", last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
-	    //std::cout<<"last_cwnd_copy.first:"<<last_cwnd_copy.first<<", last_cwnd_copy.second:"<<last_cwnd_copy.second<<std::endl;
-        //std::cout<<"sent_packet_range.first:"<<sent_packet_range.first<<", sent_packet_range.second:"<<sent_packet_range.second<<std::endl;
         for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
             auto check_offset = pktnum2offset[check_pn];
             
@@ -776,27 +748,19 @@ public:
        
             if (src[received_] == 0){
                 send_buffer.acknowledege_and_drop(check_offset, true);
-                // std::cout<<"pn:"<<check_pn<<", offset:"<<check_offset<<" received"<<std::endl;
-                // received_num++;
-                // if (check_pn <= last_cwnd_copy.second && check_pn >= last_cwnd_copy.first){
-                //     received_packets++;
-                //     // remove acked packet number avoding duplicate partial sending.
-                // }
                 if (check_pn <= sent_packet_range.second && check_pn >= sent_packet_range.first){
                     received_packets++;
-                    // remove acked packet number avoding duplicate partial sending.
+                    received_packets_dic.insert(check_pn);
                 }
             }else{
                 loss_check = true;
-		        if(sent_dic.find(check_offset)!=sent_dic.end()){
+		        if(sent_dic.find(check_offset) != sent_dic.end()){
                     if (sent_dic.at(check_offset) == 0){
-                        // Send proactively low priority packet if it wasn't received by receiver.
                         send_buffer.acknowledege_and_drop(check_offset, true);
                     }
 		        }
             }
         }
-
 
         if (received_packets == sent_packet_range.second - sent_packet_range.first + 1){
             loss_check = false;
@@ -806,34 +770,29 @@ public:
             pkt_ack_time = 1;
         }
 
+        if(received_packets_dic.size() != sent_packet_range.second - sent_packet_range.first + 1){
+            loss_check = false;
+            pkt_ack_time = 1;
+        }
+
         if (is_last_ack){
-            // For past acknowledge, just remove received data from send buffer.
-            // std::cout<<"is_last_ack"<<std::endl;
-            // send_unack_packet_record.erase(send_unack_packet_record.begin(), send_unack_packet_record.lower_bound(first_pkt));
-            // send_pkt_duration.erase(pkt_num);
             can_send = false;
             partial_send = false;
         }else{
             if (pkt_num == last_elicit_ack_pktnum){
                 if (pkt_ack_time == 1){
-                    // Cover last window all received info
                     can_send = true;
                     partial_send = false;
                     update_rtt();
-                    // send_pkt_duration.erase(pkt_num);
-                    // send_range = std::make_pair(1, 0);
                     if (!loss_check){
                         recovery.update_win(true, 1);
                     }else{
                         recovery.update_win(true);
                     }
-                    // send_unack_packet_record.clear();
                     send_signal = true;
                 }else{
-                    // Just cover partial received info.
-		            if(received_packets !=0){
+		            if(received_packets != 0){
                         partial_send = true;
-		               // std::cout<<"partial_send:"<<received_packets<<std::endl;
                         can_send = false;
                     }
                 }
@@ -1021,7 +980,7 @@ public:
             // Time out
             if (can_send){
                 congestion_window = recovery.cwnd();
-		        // std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
+		        std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
                 if (data_gotten){
                     data_preparation();
                 }
@@ -1032,14 +991,14 @@ public:
                     recovery.set_recovery(true);
       			    can_send = false;
                     congestion_window = recovery.cwnd();
-		            // std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
+		            std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
                     result = 6;
                 }else{
                     // Real time out, congestion control window will grow fron initial size.
                     recovery.set_recovery(true);
                     can_send = false;
                     congestion_window = recovery.cwnd();
-                    // std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
+                    std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
                     }else{
@@ -1053,7 +1012,7 @@ public:
                 //TODO: set cwnd to send buffer
                 // no time out, sender can send data.
                 congestion_window = recovery.cwnd();
-		        // std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
+		        std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
                 if (data_gotten){
                     data_preparation();
                 }
@@ -1302,6 +1261,7 @@ public:
 	    std::cout<<"------------------------------"<<std::endl;*/
         if(!send_phrase){
             received_packets = 0;
+            received_packets_dic.clear();
 	        partial_send = false;
             return;
         }
@@ -1329,6 +1289,7 @@ public:
 
         
         received_packets = 0;
+        received_packets_dic.clear();
         partial_send_packets = 0;
         send_message_start = 0;
         send_buffer.manage_recovery();
@@ -1706,7 +1667,6 @@ public:
         uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
         *end_ptr = end_pktnum;
         
-
         pktlen += HEADER_LENGTH;
         return pktlen;
     }
@@ -1819,6 +1779,7 @@ public:
         written_data_len += written_len;
         partial_send = false;
         received_packets = 0;
+        received_packets_dic.clear();
   	    return written_len;
     };
 
@@ -1942,7 +1903,6 @@ public:
                 current_range.second = end_pn;
             }
         }
-    
 
         auto index = 0;
         out_ack.resize((record2ack_pktnum.size() / MAX_ACK_NUM_PKTNUM) + 1);
@@ -2268,6 +2228,7 @@ public:
         can_send = false;
         partial_send = false;
         received_packets = 0;
+        received_packets_dic.clear();
         partial_send_packets = 0;
     };
 

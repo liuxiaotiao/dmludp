@@ -153,10 +153,6 @@ int main() {
                     while(true){
                         auto retval = recvmsg(client_fd, msgs + receive_number, 0);
 
-                        if (retval == 0){
-                            dmludp_update_receive_parameters(dmludp_connection);
-                        }
-
                         if (retval == -1){
                             if (errno == EAGAIN) {
                                 break;
@@ -173,6 +169,7 @@ int main() {
                             auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), msgs[receive_number].msg_iov->iov_len);
                             ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                             ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                            dmludp_update_receive_parameters(dmludp_connection);
                         }
                         else if (rv == 6){
                             // Packet completes tranmission and start to iov.
@@ -194,11 +191,8 @@ int main() {
                     if (!has_elicit_packet && is_application){
                         uint8_t ack[9000];
                         auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                        // for (auto id = 0; id < result ; id++){
-                        //     std::cout<<(int)out[id]<<" ";
-                        // }
-                        // std::cout<<std::endl;
                         auto sent_result = ::send(client_fd, ack, result, 0);
+                        dmludp_update_receive_parameters(dmludp_connection);
                     }
 
                     for (auto index = 0; index < receive_number; index++){

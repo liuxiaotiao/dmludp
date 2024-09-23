@@ -190,7 +190,7 @@ class Recovery{
                 
             }else{
                 // congestion_window *= BETA;
-                K = std::cbrt(W_max * (1-BETA) / C);
+                K = std::cbrt(W_max * (1 - BETA) / C);
                 cubic_time = 1;
                 congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
                 W_last_max = W_max;
