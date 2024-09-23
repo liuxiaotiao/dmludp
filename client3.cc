@@ -60,11 +60,11 @@ int main() {
         return -1;
     }
 
-    // if (connect(client_fd, (struct sockaddr *)peer, sizeof(*peer)) < 0) {
-    //     std::cerr << "Failed to connect" << std::endl;
-    //     close(client_fd);
-    //     return -1;
-    // }
+    if (connect(client_fd, (struct sockaddr *)peer, sizeof(*peer)) < 0) {
+        std::cerr << "Failed to connect" << std::endl;
+        close(client_fd);
+        return -1;
+    }
 
     bool is_server = false;
 
@@ -80,13 +80,9 @@ int main() {
     }else{
         auto start = std::chrono::high_resolution_clock::now();
         ssize_t written = dmludp_send_data_handshake(dmludp_connection, out, sizeof(out));
-        // sendto(sockfd, send_buf, strlen(send_buf), 0,
-        //                     (struct sockaddr *)&peerAddr, addr_len);
-        ssize_t sent = sendto(client_fd, out, written, 0, (struct sockaddr *)&peerAddr, sizeof(struct sockaddr_storage));
+        ssize_t sent = send(client_fd, out, written, 0);
         while(true){
-            // ssize_t received = recv(client_fd, buffer, sizeof(buffer), 0);
-            socklen_t addrlen = sizeof(struct sockaddr_storage);
-            ssize_t received = recvfrom(client_fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&peerAddr, &addrlen);
+            ssize_t received = recv(client_fd, buffer, sizeof(buffer), 0);
             if(received < 1){
                 continue;
             }
@@ -102,7 +98,7 @@ int main() {
             dmludp_set_rtt(dmludp_connection, duration.count());
             ssize_t dmludp_recv = dmludp_conn_recv(dmludp_connection, buffer, received);
             auto written = dmludp_conn_send(dmludp_connection, out, sizeof(out));
-            auto send_bytes = sendto(client_fd, out, written, 0, (struct sockaddr *)&peerAddr, sizeof(struct sockaddr_storage));
+            auto send_bytes = send(client_fd, out, written, 0);
             break;
         }
     }
@@ -126,18 +122,6 @@ int main() {
     dmludp_conn_recv_reset(dmludp_connection);
     dmludp_conn_rx_len(dmludp_connection, FILE_SIZE);
     size_t recv_time = 1;
-    struct msghdr msgs[500];
-    struct iovec iovecs[500];
-    uint8_t bufs[500][9000];
-
-    for (int i = 0; i < 500; i++) {
-        iovecs[i].iov_base = bufs[i];
-        iovecs[i].iov_len = sizeof(bufs[i]);
-        msgs[i].msg_hdr.msg_iov = &iovecs[i];
-        msgs[i].msg_hdr.msg_iovlen = 1;
-        msgs[i].msg_hdr.msg_name = &peerAddr;
-        msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_storage);
-    }
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
@@ -148,6 +132,18 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == client_fd) {
                 if (events[n].events & EPOLLIN){
+                    struct msghdr msgs[500];
+                    struct iovec iovecs[500];
+                    uint8_t bufs[500][9000];
+
+                    for (int i = 0; i < 500; i++) {
+                        iovecs[i].iov_base = bufs[i];
+                        iovecs[i].iov_len = sizeof(bufs[i]);
+                        msgs[i].msg_iov = &iovecs[i];
+                        msgs[i].msg_iovlen = 1;
+                        msgs[i].msg_name = NULL;
+                        msgs[i].msg_namelen = 0;
+                    }
 
                     bool is_application = false;
                     bool has_elicit_packet = false;
@@ -155,9 +151,9 @@ int main() {
                     size_t elicit_index = 0;
                     size_t elicit_len = 0;
                     while(true){
-                        auto retval = recvmmsg(client_fd, msgs + receive_number, 500, 0, NULL);
+                        auto retval = recvmsg(client_fd, msgs + receive_number, 0);
 
-                        if (receive_number == 0){
+                        if (retval == 0){
                             dmludp_update_receive_parameters(dmludp_connection);
                         }
 
@@ -170,55 +166,42 @@ int main() {
                             }
                         }
 
-                        for (auto index = receive_number; index < retval + receive_number; index++){
-                            auto read = msgs[index].msg_len;
-                            if (read > 0){
-                                uint32_t offset;
-                                uint64_t pkt_num;
-
-                                // TODO: check received first and then copy the data.
-                                auto rv = dmludp_process_header_info(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
-                                // Elicit ack
-                                if(rv == 4){
-                                    has_elicit_packet = true;
-                                    elicit_index = index;
-                                }
-                                else if (rv == 6){
-                                    // Packet completes tranmission and start to iov.
-                                    auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
-                                    ssize_t socket_write = ::sendto(client_fd, out, stopsize, 0,(struct sockaddr *)&peerAddr, sizeof(struct sockaddr_storage));
-                                    auto ispadding = true;
-                                    break;
-                                }
-                                else if (rv == 3){
-                                    // auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
-                                    is_application = true;
-                                // Application packet 
-                                }
-                                else if (rv == 5){
-                                }
-                            }
-
-                            if (index == elicit_index && has_elicit_packet){
-                                auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
-                                ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
-                               
-                                // ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
-                                // sendto(client_fd, out, written, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_storage));
-                                ssize_t socketwrite = ::sendto(client_fd, out, dmludpwrite, 0, (struct sockaddr *)&peerAddr, sizeof(struct sockaddr_storage));
-                            }
+                        uint32_t offset;
+                        uint64_t pkt_num;
+                        auto rv = dmludp_process_header_info(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                        if(rv == 4){
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[elicit_index].msg_hdr.msg_iov->iov_base), msgs[elicit_index].msg_hdr.msg_iov->iov_len);
+                            ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                            ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
+                        }
+                        else if (rv == 6){
+                            // Packet completes tranmission and start to iov.
+                            auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
+                            ssize_t socket_write = ::send(client_fd, out, stopsize, 0);
+                            auto ispadding = true;
+                            break;
+                        }
+                        else if (rv == 3){
+                            // auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
+                            is_application = true;
+                        // Application packet 
+                        }
+                        else if (rv == 5){
                         }
 
-                        receive_number += retval;
 
+                        receive_number += 1;
                     }
 
                     if (!has_elicit_packet && is_application){
                         uint8_t ack[9000];
                         auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                        auto sent_result = ::sendto(client_fd, ack, result, 0,(struct sockaddr *)&peerAddr, sizeof(struct sockaddr_storage));
+                        // for (auto id = 0; id < result ; id++){
+                        //     std::cout<<(int)out[id]<<" ";
+                        // }
+                        // std::cout<<std::endl;
+                        auto sent_result = ::send(client_fd, ack, result, 0);
                     }
-
 
                     for (auto index = 0; index < receive_number; index++){
                         auto rv = static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base)[0];

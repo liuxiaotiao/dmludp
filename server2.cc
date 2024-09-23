@@ -249,9 +249,7 @@ int main() {
                 }
 
 
-                if (events[n].events & EPOLLOUT){
-                    std::vector<std::vector<uint8_t>> out;
-                    
+                if (events[n].events & EPOLLOUT){                    
                     if (dmludp_transmission_complete(dmludp_connection)){
                         if(!first_check){
                             auto end = std::chrono::high_resolution_clock::now();
@@ -279,7 +277,6 @@ int main() {
 
                     }
                     size_t start_index = 0;
-  
 
                     auto send_num = dmludp_connection_send_messages(dmludp_connection, start_index);
 		            if (send_num == 0){
@@ -290,7 +287,7 @@ int main() {
                     size_t dmludp_error = 0;
 
                     while(send_num > sent){
-                        auto retval = sendmmsg(server_fd, message_hdr.data() + start_index + sent, send_num - sent, 0);
+                        auto retval = sendmsg(server_fd, message_hdr.data() + start_index + sent, 0);
                         if (retval == -1){
                         // Date: solve data cannot send out one time.
                         // Move errno == EINTR out of while(1)
@@ -304,8 +301,9 @@ int main() {
                             }
                             break;
                         }
-                        sent += retval;
+                        sent += 1;
                     }
+                
 
                     if (dmludp_error == EAGAIN){
                         dmludp_connection_send_message_complete(dmludp_connection, dmludp_error, sent);

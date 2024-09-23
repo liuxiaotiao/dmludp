@@ -9,7 +9,7 @@
 #include <tuple>
 
 namespace dmludp{
-const size_t SEND_BUFFER_SIZE = 8900;
+const size_t SEND_BUFFER_SIZE = 1350;
 
 const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 

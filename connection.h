@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <numeric>
 #include "packet.h"
-#include "Recovery.h"
+#include "cubic.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include <cmath>
@@ -22,7 +22,7 @@ namespace dmludp {
 const size_t HEADER_LENGTH = 26;
 
 // The default max_datagram_size used in congestion control.
-const size_t MAX_SEND_UDP_PAYLOAD_SIZE = 8900;
+const size_t MAX_SEND_UDP_PAYLOAD_SIZE = 1350;
 
 const size_t MAX_ACK_NUM_PKTNUM = MAX_SEND_UDP_PAYLOAD_SIZE;
 
@@ -349,13 +349,13 @@ public:
     If using sendmsg send udp data, replace mmsghdr with msghdr.
     */
     std::vector<std::shared_ptr<Header>> send_hdrs;
-    std::vector<struct mmsghdr> send_messages;
+    std::vector<struct msghdr> send_messages;
     std::vector<struct iovec> send_iovecs;
     std::vector<uint8_t> send_ack;
 
     struct iovec ack_iovec;
     
-    struct mmsghdr ack_mmsghdr;
+    struct msghdr ack_mmsghdr;
 
     ssize_t send_message_start;
 
@@ -520,17 +520,12 @@ public:
         auto arrive_time = std::chrono::high_resolution_clock::now();
         rtt = arrive_time - handshake;    
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(arrive_time.time_since_epoch()).count();
-       // std::cout << "update_rtt: " << now_ns << " ns" << ", srtt:"<<srtt.count()<<", rtt:"<<rtt.count();
         auto tmp_srtt = std::chrono::duration<double, std::nano>(srtt.count() * alpha + (1 - alpha) * rtt.count());
-        // std::cout<<"tmp_srtt:"<<tmp_srtt.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        // std::cout<<", tmp_rttvar:"<<tmp_rttvar.count();
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
-        // std::cout<<", new srtt:"<<srtt.count();
         rto = srtt + 4 * rttvar;
-        //std::cout<<", rto:"<<std::chrono::duration<double, std::nano>(rto).count()<<std::endl;
     };
 
     // Merge to intial_rtt
@@ -1225,8 +1220,8 @@ public:
                 ack_iovec.iov_base = send_ack.data();
                 ack_iovec.iov_len = send_ack.size();
 
-                ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-                ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+                ack_mmsghdr.msg_iov = &ack_iovec;
+                ack_mmsghdr.msg_iovlen = 1;
                 send_messages.push_back(ack_mmsghdr);
                 // Send size 1, just a acknowledge packet
                 // e.g 0, 1, 2 are applicatoin packet
@@ -1241,8 +1236,8 @@ public:
                     ack_iovec.iov_base = send_ack.data();
                     ack_iovec.iov_len = send_ack.size();
 
-                    ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-                    ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+                    ack_mmsghdr.msg_iov = &ack_iovec;
+                    ack_mmsghdr.msg_iovlen = 1;
                     send_messages.insert(send_messages.begin() + send_message_end, ack_mmsghdr);
   
                     send_message_start = send_message_end;
@@ -1255,8 +1250,8 @@ public:
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
-                        ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-                        ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+                        ack_mmsghdr.msg_iov = &ack_iovec;
+                        ack_mmsghdr.msg_iovlen = 1;
                         send_messages.push_back(ack_mmsghdr);
                         // 0, 1, 2 application packet
                         // 3 elicit acknowledge packet
@@ -1269,8 +1264,8 @@ public:
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
-                        ack_mmsghdr.msg_hdr.msg_iov = &ack_iovec;
-                        ack_mmsghdr.msg_hdr.msg_iovlen = 1;
+                        ack_mmsghdr.msg_iov = &ack_iovec;
+                        ack_mmsghdr.msg_iovlen = 1;
                         send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
                         send_message_start = send_message_end;
                         send_message_end = sentpkts + 1;
@@ -1294,11 +1289,11 @@ public:
         }
         /*std::cout<<"++++++++++++++++++++++++++++++"<<std::endl;
         for (auto k =send_message_start; k<send_message_end;k++) {
-            for (size_t i = 0; i < send_messages[k].msg_hdr.msg_iovlen; ++i) {
-                if (send_messages[k].msg_hdr.msg_iov[i].iov_len == 26){
+            for (size_t i = 0; i < send_messages[k].msg_iovlen; ++i) {
+                if (send_messages[k].msg_iov[i].iov_len == 26){
                         std::cout<<"k:"<<k<<" ";
                     for(auto j = 0; j < 26; j++){
-                        std::cout << (int)(static_cast<uint8_t*>(send_messages[k].msg_hdr.msg_iov[i].iov_base))[j]<< " ";
+                        std::cout << (int)(static_cast<uint8_t*>(send_messages[k].msg_iov[i].iov_base))[j]<< " ";
                     }
                     std::cout<<std::endl;
                 }
@@ -1404,8 +1399,8 @@ public:
         send_messages.resize(send_hdrs.size());
 	    //std::cout<<"send_messages.size:"<<send_messages.size()<<", send_iovecs.size:"<<send_iovecs.size()<<", send_hdrs.size:"<<send_hdrs.size()<<std::endl;
         for (auto i = 0; i < send_messages.size(); i++){
-            send_messages.at(i).msg_hdr.msg_iov = &send_iovecs.at(2*i);
-            send_messages.at(i).msg_hdr.msg_iovlen = 2;
+            send_messages.at(i).msg_iov = &send_iovecs.at(2*i);
+            send_messages.at(i).msg_iovlen = 2;
 	        /*for(auto j = 0; j < send_iovecs[2*i].iov_len ;j++){
                 std::cout<<(int)static_cast<uint8_t*>(send_iovecs[2*i].iov_base)[j]<<" ";
             }
@@ -1489,8 +1484,8 @@ public:
                 
                 // record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
-                send_messages[i].msg_hdr.msg_iov = &send_iovecs[2 * i];
-                send_messages[i].msg_hdr.msg_iovlen = 2;
+                send_messages[i].msg_iov = &send_iovecs[2 * i];
+                send_messages[i].msg_iovlen = 2;
                 written_len += out_len;
 
                 // send_unack_packet_record.insert(pn);
@@ -1527,8 +1522,8 @@ public:
         send_iovecs[ioves_size].iov_base = send_ack.data();
         send_iovecs[ioves_size].iov_len = send_ack.size();
 
-        send_messages[message_size].msg_hdr.msg_iov = &send_iovecs[ioves_size];
-        send_messages[message_size].msg_hdr.msg_iovlen = 1;
+        send_messages[message_size].msg_iov = &send_iovecs[ioves_size];
+        send_messages[message_size].msg_iovlen = 1;
 
         if (written_len){
             stop_ack = false;
@@ -1635,8 +1630,8 @@ public:
                 
                 // record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
-                send_messages[i].msg_hdr.msg_iov = &send_iovecs[2 * i];
-                send_messages[i].msg_hdr.msg_iovlen = 2;
+                send_messages[i].msg_iov = &send_iovecs[2 * i];
+                send_messages[i].msg_iovlen = 2;
                 written_len += out_len;
             }
 
@@ -1700,7 +1695,7 @@ public:
 
         // hdr->to_bytes(send_ack);
 
-        Header* hdr = reinterpret_cast<Header*>(send_ack.data())
+        Header* hdr = reinterpret_cast<Header*>(send_ack.data());
         hdr->pkt_num = pn;
         hdr->seq = pn;
         hdr->difference = send_connection_difference;
@@ -1711,11 +1706,6 @@ public:
         uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
         *end_ptr = end_pktnum;
         
-        // memcpy(send_ack.data() + HEADER_LENGTH, &start_pktnum, sizeof(uint64_t));
-        // memcpy(send_ack.data() + HEADER_LENGTH + sizeof(uint64_t), &end_pktnum, sizeof(uint64_t));
-
-        // delete hdr; 
-        // hdr = nullptr; 
 
         pktlen += HEADER_LENGTH;
         return pktlen;
@@ -1782,8 +1772,8 @@ public:
                 
                 record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
-                messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
-                messages[i].msg_hdr.msg_iovlen = 2;
+                messages[i].msg_iov = &iovecs[2 * i];
+                messages[i].msg_iovlen = 2;
                 written_len += out_len;
 
                 // Sequcence2range[send_seq].insert(pn);
@@ -1907,8 +1897,8 @@ public:
                 
                 record2ack_pktnum.push_back(pn);
                 pktnum2offset[pn] = out_off;
-                messages[i].msg_hdr.msg_iov = &iovecs[2 * i];
-                messages[i].msg_hdr.msg_iovlen = 2;
+                messages[i].msg_iov = &iovecs[2 * i];
+                messages[i].msg_iovlen = 2;
                 written_len += out_len;
 
                 send_unack_packet_record.insert(pn);
@@ -1969,8 +1959,8 @@ public:
             iovecs[ioves_size].iov_base = out_ack[index].data();
             iovecs[ioves_size].iov_len = out_ack[index].size();
 
-            messages[message_size].msg_hdr.msg_iov = &iovecs[ioves_size];
-            messages[message_size].msg_hdr.msg_iovlen = 1;
+            messages[message_size].msg_iov = &iovecs[ioves_size];
+            messages[message_size].msg_iovlen = 1;
             ioves_size++;
             message_size++;
             index++;
