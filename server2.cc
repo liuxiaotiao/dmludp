@@ -263,7 +263,6 @@ int main() {
                             } 
                         }
                         
-			
                         start = std::chrono::high_resolution_clock::now();
                         std::array<struct iovec, 1> siov;
                         siov[0].iov_base = data.data();
@@ -272,7 +271,6 @@ int main() {
                         first_check = false;
                         if (!w2dmludp){
                             return false;
-                        
 			            }
 
                     }
@@ -282,7 +280,7 @@ int main() {
 		            if (send_num == 0){
                         continue;
                     }
-                    auto message_hdr = dmludp_connection_get_mmsghdr(dmludp_connection);
+                    auto message_hdr = dmludp_connection->send_messages;
                     auto sent = 0;
                     size_t dmludp_error = 0;
 

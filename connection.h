@@ -346,7 +346,7 @@ public:
 
     ////////////////////////////////
     /*
-    If using sendmsg send udp data, replace mmsghdr with msghdr.
+    If using sendmsg send udp data, replace msghdr with msghdr.
     */
     std::vector<std::shared_ptr<Header>> send_hdrs;
     std::vector<struct msghdr> send_messages;
@@ -355,7 +355,7 @@ public:
 
     struct iovec ack_iovec;
     
-    struct msghdr ack_mmsghdr;
+    struct msghdr ack_msghdr;
 
     ssize_t send_message_start;
 
@@ -471,7 +471,7 @@ public:
         send_iovecs.reserve(1000);
         ack_iovec.iov_base = nullptr;
         ack_iovec.iov_len = 0;
-        memset(&ack_mmsghdr, 0, sizeof(ack_mmsghdr));
+        memset(&ack_msghdr, 0, sizeof(ack_msghdr));
     }
 
     void initial_rtt() {
@@ -1075,7 +1075,7 @@ public:
         return result;
     }
 
-    std::vector<struct mmsghdr> get_mmsghdr(){
+    std::vector<struct msghdr> get_msghdr(){
 	    // std::cout<<"send buffer data size:"<<send_buffer.data.size()<<std::endl;
         if (send_message_start < 0 || send_message_start > send_messages.size()){
             std::cout<<"[Error] send_message_start:"<<send_message_start<<", send_messages.size():"<<send_messages.size()<<std::endl;
@@ -1086,12 +1086,12 @@ public:
         return send_messages;
     }
 
-    /*  Prepare mmsghdr(either send_mmsg or send_partial_mmsg)
+    /*  Prepare msghdr(either send_mmsg or send_partial_mmsg)
         Also processing the resend when EAGAIN occur
         Remove acknowledge packet from send_mmsg2, Add this message in send_messages
         Usage:
         send_messages();
-        auto messages = get_mmsghdr();
+        auto messages = get_msghdr();
         while(true){
             auto result += sendmmsg(messages);
         }
@@ -1220,9 +1220,9 @@ public:
                 ack_iovec.iov_base = send_ack.data();
                 ack_iovec.iov_len = send_ack.size();
 
-                ack_mmsghdr.msg_iov = &ack_iovec;
-                ack_mmsghdr.msg_iovlen = 1;
-                send_messages.push_back(ack_mmsghdr);
+                ack_msghdr.msg_iov = &ack_iovec;
+                ack_msghdr.msg_iovlen = 1;
+                send_messages.push_back(ack_msghdr);
                 // Send size 1, just a acknowledge packet
                 // e.g 0, 1, 2 are applicatoin packet
                 // 3 is a elicit acknowledge packet
@@ -1236,9 +1236,9 @@ public:
                     ack_iovec.iov_base = send_ack.data();
                     ack_iovec.iov_len = send_ack.size();
 
-                    ack_mmsghdr.msg_iov = &ack_iovec;
-                    ack_mmsghdr.msg_iovlen = 1;
-                    send_messages.insert(send_messages.begin() + send_message_end, ack_mmsghdr);
+                    ack_msghdr.msg_iov = &ack_iovec;
+                    ack_msghdr.msg_iovlen = 1;
+                    send_messages.insert(send_messages.begin() + send_message_end, ack_msghdr);
   
                     send_message_start = send_message_end;
                     send_message_end += 1;
@@ -1250,9 +1250,9 @@ public:
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
-                        ack_mmsghdr.msg_iov = &ack_iovec;
-                        ack_mmsghdr.msg_iovlen = 1;
-                        send_messages.push_back(ack_mmsghdr);
+                        ack_msghdr.msg_iov = &ack_iovec;
+                        ack_msghdr.msg_iovlen = 1;
+                        send_messages.push_back(ack_msghdr);
                         // 0, 1, 2 application packet
                         // 3 elicit acknowledge packet
                         send_message_start = send_message_end;
@@ -1264,9 +1264,9 @@ public:
                         ack_iovec.iov_base = send_ack.data();
                         ack_iovec.iov_len = send_ack.size();
 
-                        ack_mmsghdr.msg_iov = &ack_iovec;
-                        ack_mmsghdr.msg_iovlen = 1;
-                        send_messages.insert(send_messages.begin() + sentpkts, ack_mmsghdr);
+                        ack_msghdr.msg_iov = &ack_iovec;
+                        ack_msghdr.msg_iovlen = 1;
+                        send_messages.insert(send_messages.begin() + sentpkts, ack_msghdr);
                         send_message_start = send_message_end;
                         send_message_end = sentpkts + 1;
                     }
@@ -1714,7 +1714,7 @@ public:
     // send_partial_mmsg works just for last cwnd range packet received.
     ssize_t send_partial_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
-        std::vector<struct mmsghdr> &messages, 
+        std::vector<struct msghdr> &messages, 
         std::vector<struct iovec> &iovecs)
     {
         iovecs.resize(received_packets * 2);
@@ -1825,7 +1825,7 @@ public:
     // Prepare data.
     ssize_t send_mmsg(
         std::vector<std::shared_ptr<Header>> &hdrs,
-        std::vector<struct mmsghdr> &messages, 
+        std::vector<struct msghdr> &messages, 
         std::vector<struct iovec> &iovecs,
         std::vector<std::vector<uint8_t>> &out_ack)
     {

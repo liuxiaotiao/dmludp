@@ -7,13 +7,13 @@ namespace dmludp{
 
 // Congestion Control
 //  initial cwnd = min (10*MSS, max (2*MSS, 14600)) 
-const size_t INITIAL_WINDOW_PACKETS = 2;
+const size_t INITIAL_WINDOW_PACKETS = 10;
 
-const size_t PACKET_SIZE =8900;
+const size_t PACKET_SIZE = 1350;
 
 const size_t INI_WIN = PACKET_SIZE * INITIAL_WINDOW_PACKETS;
 
-const size_t INI_SSTHREAD = PACKET_SIZE * 40;
+const size_t INI_SSTHREAD = PACKET_SIZE * 200;
 
 const double BETA = 0.7;
 
@@ -26,7 +26,6 @@ enum CongestionControlAlgorithm {
     NEWCUBIC = 1,
 
 };
-
 
 class Recovery{
     public:
