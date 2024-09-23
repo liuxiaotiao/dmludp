@@ -18,7 +18,7 @@
 #define PORT 12355
 #define MAX_EVENTS 10
 #define CLIENT_IP "10.10.1.2"
-#define SEND_TIME 2000
+#define SEND_TIME 2
 
 int main() {
     // std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);

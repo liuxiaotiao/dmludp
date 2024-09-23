@@ -19,7 +19,7 @@
 #define MAX_EVENTS 10
 #define SERVER_IP "10.10.1.1"
 #define FILE_SIZE 104857600
-#define RECEIVE_TIME 2000
+#define RECEIVE_TIME 2
 
 int main() {
     int client_fd, epoll_fd;
