@@ -39,7 +39,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
         // scenario: left not received data is more than cwnd.
 
-        std::vector<uint64_t> record_off;
+        std::set<uint64_t> record_off;
 
         std::set<uint64_t> received_offset;
 
@@ -48,6 +48,8 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
         size_t total_bytes;
 
         ssize_t written_bytes;
+
+        ssize_t bytes_in_flight;
 
         SendBuf():
         pos(0),
@@ -60,7 +62,9 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
         last_pos(0),
         total_bytes(0),
 	    written_bytes(0),
-        written_packet(0){};
+        written_packet(0),
+        bytes_in_flight(0)
+        {};
 
         ~SendBuf(){};
 
@@ -121,7 +125,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             if (is_drop){
                 received_offset.insert(in_offset);
                 received_check.insert(in_offset);
-                // std::cout<<"received_offset.size:"<<received_offset.size()<<", received_check.size:"<<received_check.size()<<std::endl;
             }
         }
 
@@ -133,6 +136,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             length = 0;
             received_offset.clear();
             received_check.clear();
+            record_off.clear();
 	        written_bytes = 0;
             removed = 0;
             written_packet = 0;
@@ -176,7 +180,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             return max_data;
         }
 
-        ////rewritetv
         /// Resets the stream at the current offset and clears all buffered data.
         uint64_t reset(){
             auto unsent_off = off_front();
@@ -211,11 +214,9 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             int written_length_;
             for (written_length_ = 0; written_length_ < window_size;){
                 auto packet_len = std::min(write_data_len, SEND_BUFFER_SIZE);
-                // data[off] = std::make_pair(src + start_off + written_length_, packet_len);
-                // auto meta_ = std::make_pair(src + start_off + written_length_, packet_len);
-                // data.push_back(std::make_pair(off, meta_));
-                // std::cout<<"send buffer off:"<<off<<std::endl;
+                
                 data.emplace_back(off, src + start_off + written_length_, (uint64_t)packet_len);
+                record_off.insert(off);
                 written_packet++;
                 length += (uint64_t) packet_len;
                 used_length += packet_len;
@@ -223,6 +224,7 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                 write_data_len -= packet_len;
                 off += (uint64_t) packet_len;
 		        written_bytes += packet_len;
+                
                 if (write_data_len == 0){
                     break;
                 }
@@ -261,27 +263,13 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                     partial = false;
                 }
                 out_len = std::get<2>(buf);
-                /* if (out_len == 0){
-                    if (used_length != 0){
-                        if (total_bytes - out_off >= MIN_SENDBUF_INITIAL_LEN){
-                                out_len = MIN_SENDBUF_INITIAL_LEN;
-                            }else{
-                                out_len = total_bytes - out_off + 1;
-                            }
-                    }
-                }*/
+              
                 // Copy data to the output buffer.
                 out.iov_base = (void *)(std::get<1>(buf));
                 out.iov_len = out_len;
 
                 length -= (uint64_t)(out_len);
                 used_length -= (out_len);
-
-                // out_len = buf.second.second;
-
-                // out_len = std::get<2>(buf);
-
-                // std::cout<<"out_off:"<<out_off<<", out_len"<<out_len<<", data.len():"<<data.size()<<", pos:"<<pos<<std::endl;
 
                 if (partial) {
                     // We reached the maximum capacity, so end here.

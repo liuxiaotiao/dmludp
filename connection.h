@@ -113,63 +113,6 @@ public:
     };
 };
 
-class Received_Record_Debug{
-public:
-    // key: #packet, value: (offset, length)
-    std::map<uint64_t, std::pair<uint64_t, uint64_t>> pktnum2offset;
-
-    // key: acknowledge packet num, value: (application num, received or not)
-    std::map<uint64_t, std::map<uint64_t, uint8_t>> acknowledege_record;
-
-    std::vector<std::pair<uint64_t, uint64_t>> received_complete_record;
-
-    Received_Record_Debug(){};
-
-    ~Received_Record_Debug(){};
-
-    void add_offset_and_pktnum(uint64_t pn, uint64_t offset, uint16_t len){
-        pktnum2offset.emplace(pn, std::make_pair(offset, len));
-    };
-
-    void add_acknowledeg_info(uint64_t ack_pn, std::map<uint64_t, uint8_t> received){
-        acknowledege_record[ack_pn] = std::move(received);
-    }
-
-    void add_recevie(uint64_t rx_excepted, uint64_t received_len){
-        received_complete_record.emplace_back(rx_excepted, received_len);
-    }
-
-    void clear(){
-        pktnum2offset.clear();
-        acknowledege_record.clear();
-    };
-
-    void show(){
-        std::cout<<"[Receive Error]"<<std::endl;
-        std::cout<<"[Info] Application packet info"<<std::endl;
-        for (const auto& [key, value] : pktnum2offset){
-            std::cout << "Application: " << key << ", offset: " << value.first << ", length:" << value.second << std::endl;
-        }
-        std::cout<<std::endl;
-        std::cout<<"[Info] Acknowledge info"<<std::endl;
-        for (const auto& outer_pair : acknowledege_record) {
-            std::cout << "Acknowledge pktnum: " << outer_pair.first << std::endl;
-
-            // iterate inner map
-            for (const auto& inner_pair : outer_pair.second) {
-                std::cout << "Application num: " << inner_pair.first << ", received: " << (int)inner_pair.second << std::endl;
-            }
-        }
-
-        std::cout<<"[Info] Application packet received"<<std::endl;
-        for (auto it = received_complete_record.begin(); it != received_complete_record.end(); ++it) {
-            std::cout << "[Compare] rx_length:" << it->first << " "<<(it->first == it->second)<< " rlen:" << it->second << std::endl;
-        }   
-        std::cout<<std::endl;
-    }
-
-};
-
 class Connection{
 public: 
     size_t recv_count;
@@ -253,8 +196,6 @@ public:
 
     RecvBuf rec_buffer;
 
-    Received_Record_Debug RRD;
-
     // Date: 7th Jan 2024
     std::vector<sbuffer> data_buffer;
 
@@ -302,8 +243,6 @@ public:
 
     std::pair<uint64_t, uint64_t> receive_range;
 
-    std::pair<uint64_t, uint64_t> send_range;
-
     bool can_send;
 
     bool partial_send;
@@ -322,10 +261,10 @@ public:
 
     std::set<size_t> received_packets_dic;
 
+    std::set<uint64_t> offset_dic;
+
     // Record how many packet sent.
     size_t partial_send_packets;
-
-    size_t plan2send;
 
     std::pair<uint64_t, uint64_t> last_cwnd_copy;
 
@@ -343,9 +282,6 @@ public:
     bool partial_signal;
     // multiple partial ack, and timeout
     bool partial_signal2;
-
-    bool has_prepared;
-
     ////////////////////////////////
     /*
     If using sendmsg send udp data, replace msghdr with msghdr.
@@ -362,8 +298,6 @@ public:
     ssize_t send_message_start;
 
     ssize_t send_message_end;
-
-    ssize_t send_message_left;
 
     // In one cwnd, real sent packets
     ssize_t real_sent;
@@ -434,7 +368,6 @@ public:
     last_elicit_ack_pktnum(0),
     epoll_delay(0),
     last_congestion_window(0),
-    plan2send(0),
     received_packets(0),
     partial_send_packets(0),
     send_signal(false),
@@ -442,13 +375,11 @@ public:
     partial_signal2(false),
     send_message_start(0),
     send_message_end(0),
-    send_message_left(0),
     data_gotten(true),
     send_phrase(true),
     difference_flag(false),
     real_sent(0),
     expect_sent(0),
-    has_prepared(false)
     {
         send_ack.reserve(42);
         Header* hdr = reinterpret_cast<Header*>(send_ack.data());
@@ -770,7 +701,7 @@ public:
             pkt_ack_time = 1;
         }
 
-        if(received_packets_dic.size() != sent_packet_range.second - sent_packet_range.first + 1){
+        if(received_packets_dic.size() == (sent_packet_range.second - sent_packet_range.first + 1)){
             loss_check = false;
             pkt_ack_time = 1;
         }
@@ -799,6 +730,13 @@ public:
                 partial_signal2 = true;
             }
             
+        }
+
+        if (data_buffer.back().left == 0 && send_buffer.record_off.size() == send_buffer.received_offset.size()){
+            send_buffer.clear();
+            send_hdrs.clear();
+            send_messages.clear();
+            send_iovecs.clear();
         }
 
     }
@@ -931,8 +869,6 @@ public:
         }else{
             result = send_buffer.write(send_data.src, send_data.sent(), send_data.left, expected_cwnd_, out_len);
         }
-
-        // std::cout<<"send_buffer.size()"<<send_buffer.data.size()<<std::endl;
         return result;
     }
 
@@ -942,7 +878,6 @@ public:
         std::chrono::nanoseconds duration((uint64_t)(get_rtt()));
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-        // std::cout<<"on_time:"<< now_ns << " ns" <<std::endl;
         if (epoll_delay >= 4){
             duration *= 2;
         }
@@ -1246,19 +1181,7 @@ public:
         if (err_ != 0){
             return;
         }
-        /*std::cout<<"++++++++++++++++++++++++++++++"<<std::endl;
-        for (auto k =send_message_start; k<send_message_end;k++) {
-            for (size_t i = 0; i < send_messages[k].msg_iovlen; ++i) {
-                if (send_messages[k].msg_iov[i].iov_len == 26){
-                        std::cout<<"k:"<<k<<" ";
-                    for(auto j = 0; j < 26; j++){
-                        std::cout << (int)(static_cast<uint8_t*>(send_messages[k].msg_iov[i].iov_base))[j]<< " ";
-                    }
-                    std::cout<<std::endl;
-                }
-            }
-        }
-	    std::cout<<"------------------------------"<<std::endl;*/
+    
         if(!send_phrase){
             received_packets = 0;
             received_packets_dic.clear();
@@ -1269,14 +1192,9 @@ public:
         set_handshake();
         send_phrase = true;
 
-        // sent_packet_range.first = send_hdrs.at(0)->pkt_num;
-        // auto end_index = std::min((send_message_end - 2), (ssize_t)(send_hdrs.size() - 1));
-        // sent_packet_range.second = send_hdrs.at(end_index)->pkt_num;
-        //std::cout<<"first:"<<sent_packet_range.first<<", second:"<<sent_packet_range.second<<std::endl;
         if (data_gotten){
             data_gotten = false;
         }
-	    // std::cout<<"last_elicit_ack_pktnum:"<<last_elicit_ack_pktnum<<std::endl;
         
         if (send_message_end >= send_messages.size()){
             send_hdrs.clear();
@@ -1284,7 +1202,6 @@ public:
             send_iovecs.clear(); 
         }else{
             mmsg_rearrange();
-            // std::cout<<"mmsg_rearrange(), send_messages.size:"<<send_messages.size()<<std::endl;
         }
 
         
@@ -1294,8 +1211,6 @@ public:
         send_message_start = 0;
         send_buffer.manage_recovery();
         if (!send_buffer.is_empty()){
-            // Add cwnd expectation function as per last real cwnd.
-            // Add new packet type: received number to reduce searching cost.
             ssize_t forecast_ = recovery.cwnd_expect();
             if(forecast_ <= 0){
                 std::cout<<"[Error] Wrong cwnd!"<<std::endl;
@@ -1303,7 +1218,6 @@ public:
             }
             if (send_messages.size() * MAX_SEND_UDP_PAYLOAD_SIZE < forecast_){
                 send_mmsg2(forecast_);
-                // std::cout<<"send_mmsg2, send_messages.size:"<<send_messages.size()<<", forecast_:"<<forecast_<<std::endl;
             }
         }
         if (!send_hdrs.empty()){
@@ -1337,16 +1251,13 @@ public:
         size_t remove_size = send_message_end;  
         //TODO
         // Didn't consider acknowldege in this structure. Rethinkg send_hdrs, send_iovecs.
-	    //std::cout<<"send_hdrs.size():"<<send_hdrs.size()<<", remove_size:"<<remove_size<<std::endl;
         if(remove_size >= 0 && remove_size <= send_hdrs.size()){
             send_hdrs.erase(send_hdrs.begin(), send_hdrs.begin() + remove_size - 1);
         }
-        //std::cout<<"send_messages.size():"<<send_messages.size()<<", remove_size:"<<remove_size<<std::endl;
         if(remove_size >= 0 && remove_size <= send_messages.size()){
             send_messages.erase(send_messages.begin(), send_messages.begin() + remove_size);
         }
         
-	    //std::cout<<"send_iovecs.size():"<<send_iovecs.size()<<", remove_size:"<<remove_size<<std::endl;
         if(remove_size >= 0 && remove_size < send_iovecs.size()){
             send_iovecs.erase(send_iovecs.begin(), send_iovecs.begin() + 2 * (remove_size - 1));
         }
@@ -1358,14 +1269,9 @@ public:
 
         send_messages.clear();
         send_messages.resize(send_hdrs.size());
-	    //std::cout<<"send_messages.size:"<<send_messages.size()<<", send_iovecs.size:"<<send_iovecs.size()<<", send_hdrs.size:"<<send_hdrs.size()<<std::endl;
         for (auto i = 0; i < send_messages.size(); i++){
             send_messages.at(i).msg_iov = &send_iovecs.at(2*i);
             send_messages.at(i).msg_iovlen = 2;
-	        /*for(auto j = 0; j < send_iovecs[2*i].iov_len ;j++){
-                std::cout<<(int)static_cast<uint8_t*>(send_iovecs[2*i].iov_base)[j]<<" ";
-            }
-            std::cout<<std::endl;*/
         }
 
         for(auto i = 0; i < send_hdrs.size(); i++){
@@ -1657,6 +1563,7 @@ public:
         // hdr->to_bytes(send_ack);
 
         Header* hdr = reinterpret_cast<Header*>(send_ack.data());
+        hdr->ty = Type::ElicitAck;
         hdr->pkt_num = pn;
         hdr->seq = pn;
         hdr->difference = send_connection_difference;
@@ -1664,7 +1571,7 @@ public:
         uint64_t* start_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
         *start_ptr = start_pktnum;
         
-        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
+        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26 + sizeof(uint64_t));
         *end_ptr = end_pktnum;
         
         pktlen += HEADER_LENGTH;
@@ -1990,8 +1897,6 @@ public:
 
         send_pkt_duration[pn] = std::make_pair(start_pktnum, end_pktnum);
         // std::cout<<"start:"<<start_pktnum<<", end:"<<end_pktnum<<std::endl;
-        // send_range = std::make_pair(start_pktnum, end_pktnum);
-
         pktlen += HEADER_LENGTH;
         return pktlen;
     }
@@ -2071,6 +1976,7 @@ public:
             difference_flag = false;
             delete hdr; 
             hdr = nullptr; 
+            update_receive_parameter();
         }      
 
         if (ty == Type::Fin){
@@ -2119,6 +2025,7 @@ public:
         }
         psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);
         difference_flag = false;
+        update_receive_parameter();
         delete hdr; 
         hdr = nullptr; 
         return psize;

@@ -132,11 +132,11 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == client_fd) {
                 if (events[n].events & EPOLLIN){
-                    struct msghdr msgs[500];
-                    struct iovec iovecs[500];
-                    uint8_t bufs[500][9000];
+                    struct msghdr msgs[800];
+                    struct iovec iovecs[800];
+                    uint8_t bufs[800][9000];
 
-                    for (int i = 0; i < 500; i++) {
+                    for (int i = 0; i < 800; i++) {
                         iovecs[i].iov_base = bufs[i];
                         iovecs[i].iov_len = sizeof(bufs[i]);
                         msgs[i].msg_iov = &iovecs[i];
@@ -170,6 +170,7 @@ int main() {
                             ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
                             ssize_t socketwrite = ::send(client_fd, out, dmludpwrite, 0);
                             dmludp_update_receive_parameters(dmludp_connection);
+                            has_elicit_packet = true;
                         }
                         else if (rv == 6){
                             // Packet completes tranmission and start to iov.
