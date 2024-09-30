@@ -141,7 +141,7 @@ class Recovery{
         auto w_max = W_max / max_datagram_size;
         auto DeltaT = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
 
-        return (C * std::pow(DeltaT - K, 3.0) + W_last_max) * PACKET_SIZE;
+        return (C * std::pow(DeltaT - K, 3.0) + w_max) * PACKET_SIZE;
     }
 
     void update_cubic_status(int status){
@@ -233,10 +233,14 @@ class Recovery{
             if (congestion_window < ssthread){
 		    expect_cwnd_ = congestion_window * 2;
             }else{
-                expect_cwnd_ = congestion_window + PACKET_SIZE;
+                expect_cwnd_ = congestion_window * 1.25;
             }
         }else{
-            expect_cwnd_ = C * std::pow(cubic_time - K, 3.0) + W_last_max;
+            auto now = std::chrono::system_clock::now();
+
+            // 计算0.1秒后的时间
+            auto future_time = now + std::chrono::milliseconds(200);
+            expect_cwnd_ = w_cubic(future_time);
         }
         if (expect_cwnd_ < INI_WIN){
             expect_cwnd_ = INI_WIN;
