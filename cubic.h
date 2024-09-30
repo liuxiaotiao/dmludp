@@ -56,7 +56,7 @@ class Recovery{
 
     size_t last_cwnd;
 
-    size_t cubic_time;
+    std::chrono::system_clock::time_point cubic_time;
 
     size_t W_max;
 
@@ -98,14 +98,13 @@ class Recovery{
     incre_win_copy(0),
     decre_win_copy(0),
     is_congestion(false),
-    cubic_time(0),
     is_slow_start(true),
     is_congestion_avoidance(false),
     is_recovery(false),
     no_loss(true),
     parital_allowed(INI_WIN),
     timeout_recovery(false),
-    double cwnd_free(0),
+    cwnd_free(0),
     K(0.0),
     ssthread(INI_SSTHREAD){
         max_datagram_size = PACKET_SIZE;
@@ -144,28 +143,6 @@ class Recovery{
 
         return (C * std::pow(DeltaT - K, 3.0) + W_last_max) * PACKET_SIZE;
     }
-
-    // void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
-    //     if (update_cwnd){
-    //         // highest priority
-    //         if (instant_send){
-    //             no_loss = true;
-    //             timeout_recovery = false;
-    //         }else{
-    //             no_loss = false;
-    //             timeout_recovery = false;
-    //         }
-    //     }else{
-    //         if (!timeout_){
-    //             parital_allowed = instant_send;
-    //             no_loss = true;
-    //             timeout_recovery = true;
-    //         }else{
-    //             no_loss = false;
-    //             timeout_recovery = true;
-    //         }
-    //     }
-    // }
 
     void update_cubic_status(int status){
         if(status == 1){
@@ -225,9 +202,9 @@ class Recovery{
 
         // cubic
         if(is_recovery){
-            auto cubic_cwnd = w_cubic();
             auto now = std::chrono::high_resolution_clock::now();
-            t = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
+            auto cubic_cwnd = w_cubic(now);
+            auto t = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
             auto est_cwn = W_max * BETA + (0.5 * (t / RTT)) * PACKET_SIZE;
             if(cubic_cwnd < 1.5 * W_max && cubic_cwnd > W_max){
                 // Reno-friendly
@@ -241,78 +218,7 @@ class Recovery{
         cwndprior = congestion_window;
         return congestion_window;
     }
-
-    // size_t cwnd(){
-    //     if (timeout_recovery){
-    //         if (congestion_window / 2 > INI_WIN){
-    //             ssthread = congestion_window / 2;
-    //         }   
-    //         congestion_window = INI_WIN;
-    //         W_max = congestion_window;
-    //         change_status(false);
-    //     }else{
-    //         if (no_loss == true){
-    //             if (is_slow_start){
-    //                 if (congestion_window < ssthread){
-    //                     if (congestion_window == 0){
-    //                         congestion_window = INI_WIN;
-    //                     }else{
-    //                         congestion_window *= 2;
-    //                     }     
-    //                 }else{
-    //                     congestion_window += PACKET_SIZE;
-    //                 }
-    //             }
-
-    //             if (is_congestion){
-    //                 congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_last_max;
-    //             }
-    //             W_max = congestion_window;
-                
-    //         }else{
-    //             // congestion_window *= BETA;
-    //             K = std::cbrt(W_max * (1-BETA) / C);
-    //             cubic_time = 1;
-    //             congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
-    //             W_last_max = W_max;
-    //             change_status(true);
-    //         }
-    //     }
-    //     if (congestion_window < INI_WIN){
-    //         congestion_window = INI_WIN;
-    //     }
-
-    //     if (congestion_window == INI_WIN){
-    //         change_status(false);
-    //     }
-    //     set_recovery(false);
-    //     parameter_reset();
-    //     return congestion_window;
-    // }
-
-    // void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
-    //     if (update_cwnd){
-    //         // highest priority
-    //         if (instant_send){
-    //             no_loss = true;
-    //             timeout_recovery = false;
-    //         }else{
-    //             no_loss = false;
-    //             timeout_recovery = false;
-    //         }
-    //     }else{
-    //         if (!timeout_){
-    //             parital_allowed = instant_send;
-    //             no_loss = true;
-    //             timeout_recovery = true;
-    //         }else{
-    //             no_loss = false;
-    //             timeout_recovery = true;
-    //         }
-    //     }
-    // }
-    
-    
+       
     bool transmission_check(){
         return (cwnd_increment == last_cwnd);
     }
