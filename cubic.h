@@ -7,7 +7,7 @@ namespace dmludp{
 
 // Congestion Control
 //  initial cwnd = min (10*MSS, max (2*MSS, 14600)) 
-const size_t INITIAL_WINDOW_PACKETS = 2;
+const size_t INITIAL_WINDOW_PACKETS = 10;
 
 const size_t PACKET_SIZE = 1350;
 
@@ -19,7 +19,9 @@ const double BETA = 0.7;
 
 const double C = 0.4;
 
-const double ROLLBACK_THRESHOLD_PERCENT = 0.2;
+const double ROLLBACK_THRESHOLD_PERCENT = 0.8;
+
+const double ALPHA_AIMD = 0.5; // 3.0 * (1.0 - BETA) / (1.0 + BETA) ~= 0.5
 
 enum CongestionControlAlgorithm {
     /// CUBIC congestion control algorithm (default). `cubic` in a string form.
@@ -61,6 +63,10 @@ class Recovery{
 
     size_t W_last_max;
 
+    double cwndprior;
+
+    double aimdwindow;
+
     bool is_congestion;
 
     size_t cwnd_increment;
@@ -68,6 +74,10 @@ class Recovery{
     size_t ssthread;
 
     bool is_slow_start;
+
+    bool is_congestion_avoidance;
+     
+    bool is_recovery;
 
     bool no_loss;
 
@@ -89,6 +99,8 @@ class Recovery{
     is_congestion(false),
     cubic_time(0),
     is_slow_start(true),
+    is_congestion_avoidance(false),
+    is_recovery(false),
     no_loss(true),
     parital_allowed(INI_WIN),
     timeout_recovery(false),
@@ -114,27 +126,191 @@ class Recovery{
         congestion_window = max_datagram_size * INITIAL_WINDOW_PACKETS;
     };
 
-    void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
-        if (update_cwnd){
-            // highest priority
-            if (instant_send){
-                no_loss = true;
-                timeout_recovery = false;
-            }else{
-                no_loss = false;
-                timeout_recovery = false;
-            }
+    // K = cubic_root(W_max * (1 - beta_cubic) / C) (Eq. 2)
+    void cubic_k(){
+        W_max = congestion_window;
+        auto w_max = W_max / PACKET_SIZE;
+
+        K = std::cbrt(w_max * (1 - BETA) / C);
+        cubic_time = std::chrono::high_resolution_clock::now();
+    }
+
+    // W_cubic(t) = C * (t - K)^3 + w_max (Eq. 1)
+    double w_cubic(const std::chrono::system_clock::time_point& now) {
+        auto w_max = W_max / max_datagram_size as f64;
+        auto DeltaT = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
+
+        return (C * std::pow(DeltaT - K, 3.0) + W_last_max) * PACKET_SIZE;
+    }
+
+    // void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
+    //     if (update_cwnd){
+    //         // highest priority
+    //         if (instant_send){
+    //             no_loss = true;
+    //             timeout_recovery = false;
+    //         }else{
+    //             no_loss = false;
+    //             timeout_recovery = false;
+    //         }
+    //     }else{
+    //         if (!timeout_){
+    //             parital_allowed = instant_send;
+    //             no_loss = true;
+    //             timeout_recovery = true;
+    //         }else{
+    //             no_loss = false;
+    //             timeout_recovery = true;
+    //         }
+    //     }
+    // }
+
+    void update_cubic_status(int status){
+        if(status == 1){
+            is_slow_start = true;
+            is_congestion_avoidance = false;
+            is_recovery = false;
+        }else if(status == 2){
+            is_slow_start = false;
+            is_congestion_avoidance = true;
+            is_recovery = false;
         }else{
-            if (!timeout_){
-                parital_allowed = instant_send;
-                no_loss = true;
-                timeout_recovery = true;
-            }else{
-                no_loss = false;
-                timeout_recovery = true;
-            }
+            is_slow_start = false;
+            is_congestion_avoidance = false;
+            is_recovery = true;
+            cubic_k();
+            ssthread = congestion_window * BETA;
         }
     }
+
+    void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
+        if (update_cwnd){
+            if (timeout_){
+                no_loss = true;
+                update_cubic_status(1);
+            }
+
+            if (instant_send * PACKET_SIZE < ROLLBACK_THRESHOLD_PERCENT * cwndprior){
+                no_loss = false;
+
+                update_cubic_status(3);
+            }else{
+                no_loss = true;
+            }
+        }else{
+            cwnd_available += instant_send * PACKET_SIZE;
+        }
+    }
+
+    size_t cwnd(const std::chrono::system_clock::time_point& now = std::chrono::high_resolution_clock::now(), double RTT){
+        // slow start
+        if(is_slow_start){
+            if (congestion_window < ssthread){
+                if (congestion_window == 0){
+                    congestion_window = INI_WIN;
+                }else{
+                    congestion_window *= 2;
+                }     
+            }else{
+                update_cubic_status(2);
+            }
+        }
+        
+        // congstion avoidance
+        if(is_congestion_avoidance){
+            congestion_window *= 1.25;
+        }
+
+        // cubic
+        if(is_recovery){
+            auto cubic_cwnd = w_cubic();
+            auto est_cwn = W_max * BETA + (0.5 * (t / RTT)) * PACKET_SIZE;
+            if(cubic_cwnd < 1.5 * W_max && cubic_cwnd > W_max){
+                // Reno-friendly
+                congestion_window = est_cwn;
+            }else{
+                // Concave or Convex region
+                // [CongestionWindow, 1.5*CongestionWindow]
+                congestion_window = std::max(1.5 * est_cwn, std::max(cubic_cwnd, est_cwn));
+            }
+        }
+        cwndprior = congestion_window;
+        return congestion_window;
+    }
+
+    size_t cwnd_available(){
+        return cwnd_available;
+    }
+
+    // size_t cwnd(){
+    //     if (timeout_recovery){
+    //         if (congestion_window / 2 > INI_WIN){
+    //             ssthread = congestion_window / 2;
+    //         }   
+    //         congestion_window = INI_WIN;
+    //         W_max = congestion_window;
+    //         change_status(false);
+    //     }else{
+    //         if (no_loss == true){
+    //             if (is_slow_start){
+    //                 if (congestion_window < ssthread){
+    //                     if (congestion_window == 0){
+    //                         congestion_window = INI_WIN;
+    //                     }else{
+    //                         congestion_window *= 2;
+    //                     }     
+    //                 }else{
+    //                     congestion_window += PACKET_SIZE;
+    //                 }
+    //             }
+
+    //             if (is_congestion){
+    //                 congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_last_max;
+    //             }
+    //             W_max = congestion_window;
+                
+    //         }else{
+    //             // congestion_window *= BETA;
+    //             K = std::cbrt(W_max * (1-BETA) / C);
+    //             cubic_time = 1;
+    //             congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
+    //             W_last_max = W_max;
+    //             change_status(true);
+    //         }
+    //     }
+    //     if (congestion_window < INI_WIN){
+    //         congestion_window = INI_WIN;
+    //     }
+
+    //     if (congestion_window == INI_WIN){
+    //         change_status(false);
+    //     }
+    //     set_recovery(false);
+    //     parameter_reset();
+    //     return congestion_window;
+    // }
+
+    // void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
+    //     if (update_cwnd){
+    //         // highest priority
+    //         if (instant_send){
+    //             no_loss = true;
+    //             timeout_recovery = false;
+    //         }else{
+    //             no_loss = false;
+    //             timeout_recovery = false;
+    //         }
+    //     }else{
+    //         if (!timeout_){
+    //             parital_allowed = instant_send;
+    //             no_loss = true;
+    //             timeout_recovery = true;
+    //         }else{
+    //             no_loss = false;
+    //             timeout_recovery = true;
+    //         }
+    //     }
+    // }
     
     
     bool transmission_check(){
@@ -225,15 +401,6 @@ class Recovery{
     bool app_limited(){
         return app_limit;
     };
-    
-    void parameter_reset(){
-        incre_win = 0;
-        decre_win = 0;
-        incre_win_copy = 0;
-        decre_win_copy = 0;
-        bytes_in_flight = 0;
-        cwnd_increment = 0;
-    }
 
 };
 
