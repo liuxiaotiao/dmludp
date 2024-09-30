@@ -870,7 +870,7 @@ public:
 
             // Time out
             if (can_send){
-                congestion_window = recovery.cwnd();
+                congestion_window = recovery.cwnd((double)get_rtt()/1000000000);
 		        std::cout<<"3 congestion_window:"<<congestion_window<<std::endl;
                 if (data_gotten){
                     data_preparation();
@@ -881,14 +881,14 @@ public:
                     // Partial acknowldege will be regarded as loss.
                     recovery.set_recovery(true);
       			    can_send = false;
-                    congestion_window = recovery.cwnd();
+                    congestion_window = recovery.cwnd((double)get_rtt()/1000000000);
 		            std::cout<<"4 congestion_window:"<<congestion_window<<std::endl;
                     result = 6;
                 }else{
                     // Real time out, congestion control window will grow fron initial size.
                     recovery.set_recovery(true);
                     can_send = false;
-                    congestion_window = recovery.cwnd();
+                    congestion_window = recovery.cwnd((double)get_rtt()/1000000000);
                     std::cout<<"1 congestion_window:"<<congestion_window<<std::endl;
                     if(congestion_window == last_congestion_window){
                         epoll_delay++;
@@ -902,7 +902,7 @@ public:
             if (can_send){
                 //TODO: set cwnd to send buffer
                 // no time out, sender can send data.
-                congestion_window = recovery.cwnd();
+                congestion_window = recovery.cwnd((double)get_rtt()/1000000000);
 		        std::cout<<"2 congestion_window:"<<congestion_window<<std::endl;
                 if (data_gotten){
                     data_preparation();

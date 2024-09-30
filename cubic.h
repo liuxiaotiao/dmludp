@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <set>
-#include "connection.h"
 namespace dmludp{
 
 // Congestion Control
@@ -87,6 +86,8 @@ class Recovery{
 
     double K;
 
+    double cwnd_free;
+
     Recovery():
     app_limit(false),
     bytes_in_flight(0),
@@ -104,6 +105,7 @@ class Recovery{
     no_loss(true),
     parital_allowed(INI_WIN),
     timeout_recovery(false),
+    double cwnd_free(0),
     K(0.0),
     ssthread(INI_SSTHREAD){
         max_datagram_size = PACKET_SIZE;
@@ -137,7 +139,7 @@ class Recovery{
 
     // W_cubic(t) = C * (t - K)^3 + w_max (Eq. 1)
     double w_cubic(const std::chrono::system_clock::time_point& now) {
-        auto w_max = W_max / max_datagram_size as f64;
+        auto w_max = W_max / max_datagram_size;
         auto DeltaT = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
 
         return (C * std::pow(DeltaT - K, 3.0) + W_last_max) * PACKET_SIZE;
@@ -198,11 +200,11 @@ class Recovery{
                 no_loss = true;
             }
         }else{
-            cwnd_available += instant_send * PACKET_SIZE;
+            cwnd_free += instant_send * PACKET_SIZE;
         }
     }
 
-    size_t cwnd(const std::chrono::system_clock::time_point& now = std::chrono::high_resolution_clock::now(), double RTT){
+    size_t cwnd(double RTT){
         // slow start
         if(is_slow_start){
             if (congestion_window < ssthread){
@@ -224,6 +226,8 @@ class Recovery{
         // cubic
         if(is_recovery){
             auto cubic_cwnd = w_cubic();
+            auto now = std::chrono::high_resolution_clock::now();
+            t = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
             auto est_cwn = W_max * BETA + (0.5 * (t / RTT)) * PACKET_SIZE;
             if(cubic_cwnd < 1.5 * W_max && cubic_cwnd > W_max){
                 // Reno-friendly
@@ -236,10 +240,6 @@ class Recovery{
         }
         cwndprior = congestion_window;
         return congestion_window;
-    }
-
-    size_t cwnd_available(){
-        return cwnd_available;
     }
 
     // size_t cwnd(){
@@ -338,53 +338,6 @@ class Recovery{
         return expect_cwnd_;
     }
 
-    size_t cwnd(){
-        if (timeout_recovery){
-            if (congestion_window / 2 > INI_WIN){
-                ssthread = congestion_window / 2;
-            }   
-            congestion_window = INI_WIN;
-            W_max = congestion_window;
-            change_status(false);
-        }else{
-            if (no_loss == true){
-                if (is_slow_start){
-                    if (congestion_window < ssthread){
-                        if (congestion_window == 0){
-                            congestion_window = INI_WIN;
-                        }else{
-                            congestion_window *= 2;
-                        }     
-                    }else{
-                        congestion_window += PACKET_SIZE;
-                    }
-                }
-
-                if (is_congestion){
-                    congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_last_max;
-                }
-                W_max = congestion_window;
-                
-            }else{
-                // congestion_window *= BETA;
-                K = std::cbrt(W_max * (1-BETA) / C);
-                cubic_time = 1;
-                congestion_window = C * std::pow(cubic_time++ - K, 3.0) + W_max;
-                W_last_max = W_max;
-                change_status(true);
-            }
-        }
-        if (congestion_window < INI_WIN){
-            congestion_window = INI_WIN;
-        }
-
-        if (congestion_window == INI_WIN){
-            change_status(false);
-        }
-        set_recovery(false);
-        parameter_reset();
-        return congestion_window;
-    }
 
     size_t cwnd_available()  {
         return cwnd_increment;
