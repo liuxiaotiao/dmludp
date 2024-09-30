@@ -622,7 +622,7 @@ public:
         Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
         Acknowledge_time_len pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
         Difference_len pkt_difference = reinterpret_cast<Header *>(src)->difference;
-
+        size_t received_check = 0;
         uint8_t tmp_send_connection_difference = send_connection_difference + 1;
         if(send_connection_difference != pkt_difference){
             if (tmp_send_connection_difference == pkt_difference){
@@ -652,6 +652,7 @@ public:
                 if (check_pn <= sent_packet_range.second && check_pn >= sent_packet_range.first){
                     received_packets++;
                     received_packets_dic.insert(check_pn);
+                    received_check++;
                 }
             }else{
                 loss_check = true;
@@ -686,9 +687,9 @@ public:
                     partial_send = false;
                     update_rtt();
                     if (!loss_check){
-                        recovery.update_win(true, 1);
+                        recovery.update_win(true, received_check);
                     }else{
-                        recovery.update_win(true);
+                        recovery.update_win(true, received_check);
                     }
                     send_signal = true;
                 }else{
