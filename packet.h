@@ -195,6 +195,10 @@ using Packet_len = uint16_t;
         void reset(){
             next_pkt_num = 0;
         };
+
+        uint64_t getpktnum(){
+            return (next_pkt_num - 1);
+        }
     };
 }
 #pragma pack(pop)

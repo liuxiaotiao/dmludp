@@ -274,44 +274,42 @@ int main() {
                         first_check = false;
                         if (!w2dmludp){
                             return false;
-                        
 			            }
-
                     }
-                    size_t start_index = 0;
-  
 
-                    auto send_num = dmludp_connection_send_messages(dmludp_connection, start_index);
-		            if (send_num == 0){
+                    auto dmludp_status = dmludp_connection->check_status();
+                    if(dmludp_status != 1){
                         continue;
                     }
-                    auto message_hdr = dmludp_connection_get_mmsghdr(dmludp_connection);
-                    auto sent = 0;
-                    size_t dmludp_error = 0;
+                    while(true){
+                        if(dmludp_connection->send_status != 3){
+                            auto connection_sent = send_packet();
+                            auto retval = sendmsg(server_fd, dmludp->send_messages.data(), 0);
+                            if(retval == -1){
+                                if (errno == EINTR){
+                                    continue;
+                                }
 
-                    while(send_num > sent){
-                        auto retval = sendmmsg(server_fd, message_hdr.data() + start_index + sent, send_num - sent, 0);
-                        if (retval == -1){
-                        // Date: solve data cannot send out one time.
-                        // Move errno == EINTR out of while(1)
-                            if (errno == EINTR){
-                                continue;
+                                if (errno == EAGAIN){
+                                    dmludp_connection->send_packet_complete(EAGAIN);
+                                }
+                                break;
                             }
+                        }else{
+                            auto result = dmludp_connection->send_elicit_ack_message_pktnum_new3();
+                            auto retval = sendmsg(server_fd, dmludp->send_ack.data(), 0);
+                            if(retval == -1){
+                                if (errno == EINTR){
+                                    continue;
+                                }
 
-                            if (errno == EAGAIN){
-                                dmludp_error = EAGAIN;
-                                // std::cout<<"[EAGAIN] "<<sent<<std::endl;
+                                if (errno == EAGAIN){
+                                    dmludp_connection->send_packet_complete(EAGAIN);
+                                }
+                                break;
                             }
-                            break;
                         }
-                        sent += retval;
                     }
-
-                    if (dmludp_error == EAGAIN){
-                        dmludp_connection_send_message_complete(dmludp_connection, dmludp_error, sent);
-                    }else{
-                        dmludp_connection_send_message_complete(dmludp_connection);
-                    }   
 
                 }
             }

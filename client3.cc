@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include "dmludp.h"
-#include "connection3.h"
+#include "connection2.h"
 #include "RangeBuf.h"
-#include "Recovery.h"
+#include "cubic.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include <iostream>
@@ -150,6 +150,7 @@ int main() {
                     int receive_number = 0;
                     size_t elicit_index = 0;
                     size_t elicit_len = 0;
+                    size_t receive_count = 0;
                     while(true){
                         auto retval = recvmsg(client_fd, msgs + receive_number, 0);
 
@@ -182,11 +183,19 @@ int main() {
                         else if (rv == 3){
                             // auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                             is_application = true;
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov->iov_len);
                         // Application packet 
                         }
                         else if (rv == 5){
                         }
-                        receive_number += 1;
+
+                        if(receive_count % 800 == 0){
+                            uint8_t ack[9000];
+                            auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                            auto sent_result = ::send(client_fd, ack, result, 0);
+                            dmludp_update_receive_parameters(dmludp_connection);
+                        }
+                        receive_count++;
                     }
 
                     if (!has_elicit_packet && is_application){
@@ -196,19 +205,19 @@ int main() {
                         dmludp_update_receive_parameters(dmludp_connection);
                     }
 
-                    for (auto index = 0; index < receive_number; index++){
-                        auto rv = static_cast<uint8_t *>(msgs[index].msg_iov->iov_base)[0];
-                        if (rv == 3){
-                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov->iov_len);
+                    // for (auto index = 0; index < receive_number; index++){
+                    //     auto rv = static_cast<uint8_t *>(msgs[index].msg_iov->iov_base)[0];
+                    //     if (rv == 3){
+                    //         auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov->iov_len);
+                    //     }
+                    if(dmludp_conn_receive_complete(dmludp_connection)){
+                        std::cout<<recv_time++<<" time receive complete"<<std::endl;
+                        dmludp_conn_recv_reset(dmludp_connection);
+                        if (recv_time == RECEIVE_TIME){
+                            return 0;
                         }
-                        if(dmludp_conn_receive_complete(dmludp_connection)){
-                            std::cout<<recv_time++<<" time receive complete"<<std::endl;
-                            dmludp_conn_recv_reset(dmludp_connection);
-                            if (recv_time == RECEIVE_TIME){
-                                return 0;
-                            }
-                        }
-                    } 
+                    }
+                    // } 
                     
                 }
                 

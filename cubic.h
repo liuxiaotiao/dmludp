@@ -10,9 +10,9 @@ const size_t INITIAL_WINDOW_PACKETS = 10;
 
 const size_t PACKET_SIZE = 1350;
 
-const size_t INI_WIN = PACKET_SIZE * INITIAL_WINDOW_PACKETS;
+const size_t INI_WIN = INITIAL_WINDOW_PACKETS * PACKET_SIZE;
 
-const size_t INI_SSTHREAD = PACKET_SIZE * 400;
+const size_t INI_SSTHREAD = 400;
 
 const double BETA = 0.7;
 
@@ -20,7 +20,7 @@ const double C = 0.4;
 
 const double ROLLBACK_THRESHOLD_PERCENT = 0.8;
 
-const double ALPHA_AIMD = 0.5; // 3.0 * (1.0 - BETA) / (1.0 + BETA) ~= 0.5
+const double ALPHA_AIMD = 3.0 * (1.0 - BETA) / (1.0 + BETA); // 3.0 * (1.0 - BETA) / (1.0 + BETA) ~= 0.53
 
 enum CongestionControlAlgorithm {
     /// CUBIC congestion control algorithm (default). `cubic` in a string form.
@@ -34,223 +34,241 @@ class Recovery{
 
     bool app_limit;
 
-    size_t congestion_window;
-
     size_t bytes_in_flight;
 
     size_t max_datagram_size;
-    // k:f64,
-    size_t incre_win;
+    
+    /*
+    Last congestion event status
+    prior_cwnd, prior_W_max, prior_cubic_k,
+    prior_ssthresh, prior_epoch_start, prior_W_est
+    */ 
+    double prior_cwnd;
 
-    size_t decre_win;
+    double prior_W_max;
 
-    std::set<size_t> former_win_vecter;
+    double prior_cubic_k;
 
-    bool roll_back_flag;
+    double prior_ssthresh;
 
-    bool function_change;
+    std::chrono::system_clock::time_point prior_epoch_start;
 
-    size_t incre_win_copy;
+    double prior_W_est;
 
-    size_t decre_win_copy;
+    /*
+    Current congestion evet status;
+    congestion_window, W_max, K,
+    ssthresh, epoch_start, W_est
+    */
+    double congestion_window;// Bytes
 
-    size_t last_cwnd;
+    double W_max;// Bytes
 
-    std::chrono::system_clock::time_point cubic_time;
+    double ssthresh; // Bytes
 
-    size_t W_max;
+    double K; // Seconds
 
-    size_t W_last_max;
+    std::chrono::system_clock::time_point epoch_start;
 
-    double cwndprior;
+    double W_est; // Bytes
 
-    double aimdwindow;
+    size_t cwnd_inc;
 
-    bool is_congestion;
+    // 1 slow start, 2 congestion avoidance, 3 cubic
+    ssize_t congestionEvent;
 
-    size_t cwnd_increment;
+    double alpha_aimd;
 
-    size_t ssthread;
-
-    bool is_slow_start;
-
-    bool is_congestion_avoidance;
-     
-    bool is_recovery;
-
-    bool no_loss;
-
-    size_t parital_allowed;
-
-    bool timeout_recovery;
-
-    double K;
-
-    double cwnd_free;
-
-    Recovery():
+    Recovery(size_t pkt_size):
     app_limit(false),
     bytes_in_flight(0),
-    incre_win(0),
-    decre_win(0),
-    roll_back_flag(false),
-    function_change(false),
-    incre_win_copy(0),
-    decre_win_copy(0),
-    is_congestion(false),
-    is_slow_start(true),
-    is_congestion_avoidance(false),
-    is_recovery(false),
-    no_loss(true),
-    parital_allowed(INI_WIN),
-    timeout_recovery(false),
-    cwnd_free(0),
+    max_datagram_size(pkt_size),
+    prior_cwnd(INITIAL_WINDOW_PACKETS * pkt_size),
+    prior_W_max(INI_SSTHREAD),
+    prior_cubic_k(0.0),
+    prior_ssthresh(INI_SSTHREAD),
+    prior_W_est(0),
+    congestion_window(INITIAL_WINDOW_PACKETS * pkt_size),
+    W_max(INI_WIN),
+    ssthresh(INI_SSTHREAD),
     K(0.0),
-    ssthread(INI_SSTHREAD){
-        max_datagram_size = PACKET_SIZE;
-        congestion_window = 0;
-        last_cwnd = INI_WIN;
-        W_max = INI_WIN;
-        W_last_max = INI_WIN;
+    W_est(0),
+    cwnd_inc(0),
+    congestionEvent(1),
+    alpha_aimd(1){
     };
 
     ~Recovery(){};
 
 
-    void change_status(bool condition_flag){
-        is_congestion = condition_flag;
-        is_slow_start = !condition_flag;
-        W_max = congestion_window;
-    }
-
     void reset() {
-        congestion_window = max_datagram_size * INITIAL_WINDOW_PACKETS;
+        congestion_window = INITIAL_WINDOW_PACKETS;
     };
 
     // K = cubic_root(W_max * (1 - beta_cubic) / C) (Eq. 2)
-    void cubic_k(){
+    void cubic_k(const std::chrono::system_clock::time_point& now){
         W_max = congestion_window;
-        auto w_max = W_max / PACKET_SIZE;
+        auto w_max = W_max / max_datagram_size;
 
         K = std::cbrt(w_max * (1 - BETA) / C);
-        cubic_time = std::chrono::high_resolution_clock::now();
+        epoch_start = now;
     }
 
     // W_cubic(t) = C * (t - K)^3 + w_max (Eq. 1)
     double w_cubic(const std::chrono::system_clock::time_point& now) {
         auto w_max = W_max / max_datagram_size;
-        auto DeltaT = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
+        auto DeltaT = std::chrono::duration_cast<std::chrono::seconds>(now - epoch_start).count();
 
-        return (C * std::pow(DeltaT - K, 3.0) + w_max) * PACKET_SIZE;
+        return (C * std::pow(DeltaT - K, 3.0) + w_max) * max_datagram_size;
     }
 
-    void update_cubic_status(int status){
-        if(status == 1){
-            is_slow_start = true;
-            is_congestion_avoidance = false;
-            is_recovery = false;
-        }else if(status == 2){
-            is_slow_start = false;
-            is_congestion_avoidance = true;
-            is_recovery = false;
-        }else{
-            is_slow_start = false;
-            is_congestion_avoidance = false;
-            is_recovery = true;
+    double w_est_inc(size_t acked){
+        return alpha_aimd * ((double)acked * max_datagram_size /congestion_window) * max_datagram_size;
+    }
+
+    void check_point(){
+        prior_cwnd = congestion_window;
+        prior_W_max = W_max;
+        prior_cubic_k = K;
+        prior_ssthresh = ssthresh;
+        prior_epoch_start = epoch_start;
+        prior_W_est = W_est;
+    }
+
+    bool rollback() {
+        // Don't go back to slow start.
+        if (prior_cwnd < prior_ssthresh) {
+            return false;
+        }
+
+        if (congestion_window >= prior_cwnd) {
+            return false;
+        }
+
+        congestion_window = prior_cwnd;
+        ssthresh = prior_ssthresh;
+        W_max = prior_W_max;
+        K = prior_cubic_k;
+        epoch_start = prior_epoch_start;
+
+        return true;
+    }
+
+    void update_cubic_status(int status_){
+        congestionEvent = status_;
+        if (status_ == 3){
             cubic_k();
-            ssthread = congestion_window * BETA;
+            ssthresh = congestion_window * BETA;
         }
     }
 
-    void update_win(bool update_cwnd, size_t instant_send = 0, bool timeout_ = false){
-        if (update_cwnd){
-            if (timeout_){
-                no_loss = true;
-                update_cubic_status(1);
+    void on_packet_ack(int received_packets, int total_packets, 
+        const std::chrono::system_clock::time_point& now, std::chrono::seconds min_rtt){
+        if(congestionEvent == 1){
+            congestion_window += received_packets * max_datagram_size;
+            bytes_in_flight -= received_packets * max_datagram_size;
+            if (congestion_window >= ssthresh){
+                congestionEvent = 2;
             }
-
-            if (instant_send * PACKET_SIZE < ROLLBACK_THRESHOLD_PERCENT * cwndprior){
-                no_loss = false;
-
-                update_cubic_status(3);
-            }else{
-                no_loss = true;
-            }
+        }else if(congestionEvent == 2){
+            congestion_window += 1.25 * received_packets * max_datagram_size;
+            bytes_in_flight -= received_packets * max_datagram_size;
         }else{
-            cwnd_free += instant_send * PACKET_SIZE;
+            target = w_cubic(now + min_rtt);
+            target = std::max(target, congestion_window);
+            target = std::min(target, congestion_window * 1.5);
+            
+            auto w_est_inc = w_est_inc(received_packets);
+            w_est += w_est_inc;
+
+            if (w_est >= w_max) {
+                alpha_aimd = 1.0;
+            }
+
+            auto cubic_cwnd = congestion_window;
+
+            if (w_cubic(t) < w_est) {
+                // AIMD friendly region (W_cubic(t) < W_est)
+                cubic_cwnd = std::max(cubic_cwnd, w_est);
+            } else {
+                // Concave region or convex region use same increment.
+                auto cubic_inc = max_datagram_size * (target - cubic_cwnd) / cubic_cwnd;
+
+                cubic_cwnd += cubic_inc;
+            }
+
+            // Update the increment and increase cwnd by MSS.
+            cwnd_inc += cubic_cwnd - congestion_window;
+
+            if (cwnd_inc >= max_datagram_size) {
+                congestion_window += max_datagram_size;
+                cwnd_inc -= max_datagram_size;
+            }
+            if (bytes_in_flight > received_packets * max_datagram_size){
+                bytes_in_flight -= received_packets * max_datagram_size;
+            }else{
+                bytes_in_flight = 0;
+            }
         }
     }
 
-    size_t cwnd(double RTT){
-        // slow start
-        if(is_slow_start){
-            if (congestion_window < ssthread){
-                if (congestion_window == 0){
-                    congestion_window = INI_WIN;
-                }else{
-                    congestion_window *= 2;
-                }     
-            }else{
-                update_cubic_status(2);
-            }
+    void congestion_event(const std::chrono::system_clock::time_point& now) {
+        if(congestion_window < W_max){
+            W_max = congestion_window * (1.0 + BETA) / 2.0;
+        }else{
+            W_max = congestion_window;
         }
+
+        ssthresh = congestion_window * BETA;
+        ssthresh = std::max(ssthresh, INI_WIN);
         
-        // congstion avoidance
-        if(is_congestion_avoidance){
-            congestion_window *= 1.25;
-        }
-
-        // cubic
-        if(is_recovery){
-            auto now = std::chrono::high_resolution_clock::now();
-            auto cubic_cwnd = w_cubic(now);
-            auto t = std::chrono::duration_cast<std::chrono::seconds>(now - cubic_time).count();
-            auto est_cwn = W_max * BETA + (0.5 * (t / RTT)) * PACKET_SIZE;
-            if(cubic_cwnd < 1.5 * W_max && cubic_cwnd > W_max){
-                // Reno-friendly
-                congestion_window = est_cwn;
-            }else{
-                // Concave or Convex region
-                // [CongestionWindow, 1.5*CongestionWindow]
-                congestion_window = std::max(1.5 * est_cwn, std::max(cubic_cwnd, est_cwn));
-            }
-        }
-        cwndprior = congestion_window;
-        return congestion_window;
-    }
-       
-    bool transmission_check(){
-        return (cwnd_increment == last_cwnd);
-    }
-
-    void set_recovery(bool recovery_signal){
-        timeout_recovery = recovery_signal;
-    };
-
-    size_t cwnd_expect(){
-        ssize_t expect_cwnd_ = INI_WIN;
-        if(is_slow_start){
-            if (congestion_window < ssthread){
-		    expect_cwnd_ = congestion_window * 2;
-            }else{
-                expect_cwnd_ = congestion_window * 1.25;
-            }
+        congestion_window = ssthresh;
+        if(W_max < congestion_window){
+            K = 0;
         }else{
-            auto now = std::chrono::system_clock::now();
-
-            // 计算0.1秒后的时间
-            auto future_time = now + std::chrono::milliseconds(200);
-            expect_cwnd_ = w_cubic(future_time);
+            cubic_k(now);
         }
-        if (expect_cwnd_ < INI_WIN){
-            expect_cwnd_ = INI_WIN;
+        cwnd_inc = cwnd_inc * Beta;
+        w_est = congestion_window;
+        alpha_aimd = ALPHA_AIMD;
+        congestionEvent = 3;
+        if (congestion_window == INI_WIN){
+            congestionEvent = 1;
         }
-        return expect_cwnd_;
     }
+    /*
+    For ack,
+    cubic will computes w_cubic(t) and w_est(t) at the same time.
 
+    AIMD-friendly Region
+    w_est += alpha_amid * segments_acked / cwnd
+    If w_est >= w_max, alpha_amid = 1, otherwise alpha_amid = 0.53 (3.0 * (1.0 - BETA) / (1.0 + BETA))
+
+    concave:
+    (target-cwnd)/cwnd
+    convex
+    (target-cwnd)/cwnd
+
+
+    When congestion occurs, 
+    If congestion_window > w_max,
+        w_max = congestion_window
+    else
+        w_max = (1 + Beta) / 2 * congestion_window
+
+
+    Time out
+    w_max = Beta * cwnd
+    k = 0
+    */
+
+    // if congestion < last w_max, resize to wmax=(1 + beta)*cwnd
+    void on_packet_sent(size_t pktlen){
+        bytes_in_flight += pktlen;
+    }
 
     size_t cwnd_available()  {
-        return cwnd_increment;
+        return congestion_window - bytes_in_flight;
     };
 
     void collapse_cwnd() {

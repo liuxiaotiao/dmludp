@@ -78,38 +78,24 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             
 	    ssize_t off_front(){
             ssize_t result = -1;
-	        // std::cout<<"data.size():"<<data.size()<<std::endl;
             while(pos < data.size()){
-                // std::cout<<"pos:"<<pos<<std::endl;
                 if (received_offset.empty()){
                     result = std::get<0>(data[pos]);
-                    // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
-                    // std::cout<<"result:"<<result<<", len:"<<std::get<2>(data[pos])<<std::endl;
+                    
                     last_pos = pos;
                     pos++;
                     break;
                 }else{
-                    // if (std::get<0>(data[pos]) > *received_offset.rbegin()){
-                    //     result = std::get<0>(data[pos]);
-                    //     last_pos = pos;
-                    //     pos++;
-                    //     break;
-                    // }else{
                     auto check = received_offset.find(std::get<0>(data[pos]));
-                    // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
                     if(check == received_offset.end()){
                         result = std::get<0>(data[pos]);
-                        // std::cout<<"pos:"<<pos<<", off:"<<std::get<0>(data[pos])<<std::endl;
 			            last_pos = pos;
                         pos++;
                         break;
                     }else{
                         data.erase(data.begin() + pos);
                         removed++;
-                        // std::cout<<"erase size:"<<data.size()<<std::endl;
-                    }
-                    //}
-                    
+                    }                    
                 }
             }
             return result;
@@ -192,7 +178,10 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             off = unsent_off;
             return unsent_len;
         };
- 
+
+        void draining(){
+
+        }
 
         size_t pkt_num(){
             return data.size();
@@ -250,8 +239,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                 }
                 out_off = tmp_off;
                 auto buf = data[last_pos];
-
-                // std::cout<<"send_index.at(pos):"<<send_index.at(pos)<<", buf.second:"<<buf.second<<std::endl;
                 
                 size_t buf_len = 0;
                 
@@ -277,26 +264,20 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
 
             }
             sent += out_len;
-            // std::cout<<"out_len:"<<out_len<<std::endl;
             // All data in the congestion control window has been sent. need to modify
             if (sent >= max_data) {
-                // std::cout<<"sent >= max_data, sent:"<<sent<<", max_data:"<<max_data<<std::endl;
                 stop = true;
             }
             if (pos == data.size()){
-                // std::cout<<"pos:"<<pos<<", data.size():"<<data.size()<<std::endl;
                 stop = true;
             }
 
             if (data.empty()){
-                // std::cout<<"data.empty()"<<std::endl;
                 stop = true;
             }
 
             if (stop){
                 sent = 0;
-                // pos = 0;
-                // std::cout<<"sent:"<<sent<<std::endl;
             }
             return stop;
         };
@@ -322,9 +303,6 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
             }
 
             for(auto i = 0; i < data_copy.size(); i++){
-                // if(received_check.find(std::get<0>(data_copy[i])) != received_check.end()){
-                //     continue;
-                // }
                 if (3 * max_data > data.size()){
                     data.push_back(std::move(data_copy[i]));
                 }else{

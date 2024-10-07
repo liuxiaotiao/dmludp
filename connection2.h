@@ -367,7 +367,7 @@ public:
     send_phrase(true),
     difference_flag(false),
     real_sent(0),
-    expect_sent(0),
+    expect_sent(0)
     {
         send_ack.reserve(42);
         Header* hdr = reinterpret_cast<Header*>(send_ack.data());
@@ -387,9 +387,9 @@ public:
     };
 
     void init(){
-        send_hdrs.reserve(500);
-        send_messages.reserve(1000);
-        send_iovecs.reserve(1000);
+        send_hdrs.reserve(1);
+        send_messages.reserve(1);
+        send_iovecs.reserve(2);
         ack_iovec.iov_base = nullptr;
         ack_iovec.iov_len = 0;
         memset(&ack_msghdr, 0, sizeof(ack_msghdr));
@@ -842,8 +842,6 @@ public:
         }
         return result;
     }
-
-
 
     // check_status2() works with send_message()
     ssize_t check_status2(){
@@ -1475,6 +1473,99 @@ public:
   	    return written_len;
     };
 
+    ssize_t send_packet(){
+        auto send_seq = 0;
+        // consider add ack message at the end of the flow.
+        auto current_cwnd = Recovery.cwnd_available();
+        Recovery.draining();
+        send_buffer.update_max_data(current_cwnd);
+        size_t written_len = 0;
+        uint64_t first_pn = 0;
+        uint64_t end_pn = 0;
+
+        // TODO
+        // If cwnd shrink, process update seq.
+        send_seq = last_elicit_ack_pktnum + 1;
+        ssize_t out_len = 0; 
+        Offset_len out_off = 0;
+        auto priority = 0;
+        
+        auto pn = pkt_num_spaces.at(0).updatepktnum();
+        send_iovecs.resize(2);
+        send_hdrs.clear();
+        send_messages.resize(1);
+        auto s_flag = send_buffer.emit(send_iovecs[1], out_len, out_off);
+
+        sent_count += 1;
+        
+        priority = priority_calculation(out_off);
+        Type ty = Type::Application;
+
+        std::shared_ptr<Header> hdr= std::make_shared<Header>(ty, pn, priority, out_off, send_seq, 0, send_connection_difference, (Packet_num_len)out_len);
+        send_hdrs.push_back(hdr);
+       
+        send_iovecs.at(0).iov_base = (void *)hdr.get();
+        send_iovecs.at(0).iov_len = HEADER_LENGTH;
+
+        // Each sequcence coressponds to the packet range.
+        if (sent_dic.find(out_off) != sent_dic.end()){
+            if (sent_dic[out_off] != 3 && ((get_dmludp_error() != 11))){
+                sent_dic[out_off] -= 1;
+            }
+        }else{
+            sent_dic[out_off] = priority;
+        }
+        
+        // record2ack_pktnum.push_back(pn);
+        pktnum2offset[pn] = out_off;
+        send_messages[0].msg_iov = &send_iovecs[0];
+        send_messages[0].msg_iovlen = 2;
+        written_len += out_len;
+
+        if (s_flag){     
+            sent_packet_range.second = end_pn;
+            break;
+        }
+
+        if (written_len){
+            stop_ack = false;
+        }
+
+        written_data_len += written_len;
+
+        send_signal = false;
+        partial_signal = false;
+        partial_signal2 = false;
+  	    return written_len;
+    }
+
+    ssize_t send_elicit_ack_message_pktnum_new3(){
+        auto ty = Type::ElicitAck;        
+
+        size_t pktlen = 0;
+
+        uint64_t start_pktnum = sent_packet_range.first;
+        uint64_t end_pktnum =  
+
+        auto pn = pkt_num_spaces.at(1).updatepktnum();;
+        send_ack.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
+
+        Header* hdr = reinterpret_cast<Header*>(send_ack.data());
+        hdr->ty = Type::ElicitAck;
+        hdr->pkt_num = pn;
+        hdr->seq = pn;
+        hdr->difference = send_connection_difference;
+
+        uint64_t* start_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
+        *start_ptr = start_pktnum;
+        
+        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26 + sizeof(uint64_t));
+        *end_ptr = end_pktnum;
+        
+        pktlen += HEADER_LENGTH;
+        return pktlen;
+    }
+
     ssize_t send_elicit_ack_message_pktnum_new2(uint64_t elicit_acknowledege_packet_number, uint64_t range_ = 0){
         auto ty = Type::ElicitAck;        
 
@@ -1719,6 +1810,9 @@ public:
         uint8_t trail_send_difference = send_difference + 1;
         // Used to debug.
         receive_range = std::make_pair(start, end);
+        if(end - start > 1350){
+            start = end - 1350 + 1;
+        }
 	    if(trail_send_difference == receive_connection_difference){
             difference_flag = true;
             if(end - start < MAX_SEND_UDP_PAYLOAD_SIZE){
