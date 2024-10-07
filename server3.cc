@@ -296,7 +296,7 @@ int main() {
                             }
                         }else{
                             auto result = dmludp_connection->send_elicit_ack_message_pktnum_new3();
-                            auto retval = sendmsg(server_fd, dmludp_connection->send_ack.data(), 0);
+                            auto retval = send(server_fd, dmludp_connection->send_ack.data(), result, 0);
                             if(retval == -1){
                                 if (errno == EINTR){
                                     continue;
