@@ -536,7 +536,7 @@ public:
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(acked, total_sent, now, minrtt);
+                recovery.on_packet_ack(acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>minrtt);
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);
@@ -667,7 +667,7 @@ public:
             auto now = std::chrono::system_clock::now();
             // suprious congestion
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(received_check, total_sent, now, minrtt);
+                recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>minrtt);
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);
@@ -865,7 +865,7 @@ public:
             hdr->ack_time = 0;
             hdr->difference = send_connection_difference;
             hdr->pkt_length = (Packet_num_len)out_len;
-            send_iovecs.at(0).iov_base = (void *)hdr.data();
+            send_iovecs.at(0).iov_base = (void *)send_hdr.data();
             send_iovecs.at(0).iov_len = HEADER_LENGTH;
 
             // Each sequcence coressponds to the packet range.
