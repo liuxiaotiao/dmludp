@@ -536,7 +536,7 @@ public:
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>minrtt);
+                recovery.on_packet_ack(acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);
@@ -667,7 +667,7 @@ public:
             auto now = std::chrono::system_clock::now();
             // suprious congestion
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>minrtt);
+                recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);
