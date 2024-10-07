@@ -283,7 +283,6 @@ int main() {
                     }
                     while(true){
                         if(dmludp_connection->send_status != 3){
-                            auto connection_sent = send_packet();
                             auto retval = sendmsg(server_fd, dmludp_connection->send_messages.data(), 0);
                             if(retval == -1){
                                 if (errno == EINTR){

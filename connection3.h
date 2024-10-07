@@ -855,7 +855,7 @@ public:
             Type ty = Type::Application;
 
             Header *hdr;
-            hdr = send_hdr.data();
+            hdr = reinterpret_cast<dmludp::Header*>(send_hdr.data());
         
             hdr->ty = ty;
             hdr->pkt_num = pn;
@@ -867,6 +867,7 @@ public:
             hdr->pkt_length = (Packet_num_len)out_len;
             send_iovecs.at(0).iov_base = (void *)send_hdr.data();
             send_iovecs.at(0).iov_len = HEADER_LENGTH;
+            recovery.on_packet_sent(out_len);
 
             // Each sequcence coressponds to the packet range.
             if (sent_dic.find(out_off) != sent_dic.end()){
@@ -906,7 +907,6 @@ public:
         if (err_ != 0){
             return;
         }
-        recovery.draining();
         
         if(send_status == 2){
             send_status = 3;
