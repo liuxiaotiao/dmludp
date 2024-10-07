@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include "dmludp.h"
-#include "connection2.h"
+#include "connection3.h"
 #include "RangeBuf.h"
 #include "cubic.h"
 #include "recv_buf.h"
