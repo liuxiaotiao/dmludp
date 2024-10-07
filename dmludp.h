@@ -1,7 +1,7 @@
 #pragma once
 #include <cstring>
 #include <chrono>
-#include "connection2.h"
+#include "connection3.h"
 #include "recv_buf.h"
 #include "send_buf.h"
 #include "packet.h"
@@ -290,15 +290,3 @@ inline void dmludp_conn_reset_rx_len(std::shared_ptr<Connection> conn){
     conn->reset_rx_len();
 }
 
-
-inline std::vector<struct msghdr> dmludp_connection_get_msghdr(std::shared_ptr<Connection> conn){
-    return conn->get_msghdr();
-}
-
-inline ssize_t dmludp_connection_send_messages(std::shared_ptr<Connection> conn, size_t &start_){
-    return conn->send_message(start_);
-}
-
-inline void dmludp_connection_send_message_complete(std::shared_ptr<Connection> conn, size_t err_ = 0, size_t error_sent = 0){
-    conn->send_message_complete(err_, error_sent);
-}

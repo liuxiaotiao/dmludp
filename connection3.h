@@ -168,7 +168,7 @@ public:
 
     Recovery recovery;
 
-    std::array<PktNumSpace, 2> pkt_num_spaces;
+    std::array<PktNumSpace, 3> pkt_num_spaces;
 
     std::chrono::nanoseconds rtt;
 
@@ -818,13 +818,9 @@ public:
         size_t written_len = 0;
         // If has EAGAIN, continue sending, not get new packet.
         if (get_dmludp_error()){
-            send_iovecs.at(0).iov_base = (void *)hdr.get();
-            send_iovecs.at(0).iov_len = HEADER_LENGTH;
-            send_messages[0].msg_iov = &send_iovecs[0];
-            send_messages[0].msg_iovlen = 2;
-            written_len = send_iovecs.at(1).iov_len;
+            written_len = send_iovecs.at(0).iov_len + send_iovecs.at(1).iov_len;
         }else{
-            auto available_cwnd = Recovery.cwnd_available();
+            auto available_cwnd = recovery.cwnd_available();
             if (available_cwnd <= 0){
                 return 0;
             }
@@ -833,7 +829,7 @@ public:
             
             // TODO
             // If cwnd shrink, process update seq.
-            send_seq = pkt_num_spaces.at(1).getpktnum();
+            send_seq = pkt_num_spaces.at(2).getpktnum();
 
             ssize_t out_len = 0; 
             Offset_len out_off = 0;
@@ -859,7 +855,7 @@ public:
             Type ty = Type::Application;
 
             Header *hdr;
-            hdr = send_hdr.get();
+            hdr = send_hdr.data();
         
             hdr->ty = ty;
             hdr->pkt_num = pn;
@@ -869,7 +865,7 @@ public:
             hdr->ack_time = 0;
             hdr->difference = send_connection_difference;
             hdr->pkt_length = (Packet_num_len)out_len;
-            send_iovecs.at(0).iov_base = (void *)hdr.get();
+            send_iovecs.at(0).iov_base = (void *)hdr.data();
             send_iovecs.at(0).iov_len = HEADER_LENGTH;
 
             // Each sequcence coressponds to the packet range.
@@ -889,17 +885,16 @@ public:
             recovery.on_packet_sent(out_len);
 
             if (s_flag){     
-                sent_packet_range.second = end_pn;
-                auto seq_next = pkt_num_spaces.at(1).getpktnum();
+                sent_packet_range.second = pn;
+                auto seq_next = pkt_num_spaces.at(2).updatepktnum();
                 send_status = 2;
                 data_gotten = 2;
-                break;
             }
 
             if (written_len){
                 stop_ack = false;
             }
-            packet_info.first = seq_num;
+            packet_info.first = send_seq;
             packet_info.second = pn;
             written_data_len += written_len;
         }      
@@ -911,7 +906,7 @@ public:
         if (err_ != 0){
             return;
         }
-        Recovery.draining();
+        recovery.draining();
         
         if(send_status == 2){
             send_status = 3;
@@ -932,9 +927,9 @@ public:
         size_t pktlen = 0;
 
         uint64_t start_pktnum = sent_packet_range.first;
-        uint64_t end_pktnum =  
+        uint64_t end_pktnum =  sent_packet_range.second;
 
-        auto pn = pkt_num_spaces.at(1).updatepktnum();;
+        auto pn = pkt_num_spaces.at(1).updatepktnum();
         send_ack.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
 
         Header* hdr = reinterpret_cast<Header*>(send_ack.data());

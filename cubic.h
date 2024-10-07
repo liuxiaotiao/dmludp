@@ -154,14 +154,6 @@ class Recovery{
         return true;
     }
 
-    void update_cubic_status(int status_){
-        congestionEvent = status_;
-        if (status_ == 3){
-            cubic_k();
-            ssthresh = congestion_window * BETA;
-        }
-    }
-
     void on_packet_ack(int received_packets, int total_packets, 
         const std::chrono::system_clock::time_point& now, std::chrono::seconds min_rtt){
         if(congestionEvent == 1){
@@ -174,22 +166,22 @@ class Recovery{
             congestion_window += 1.25 * received_packets * max_datagram_size;
             bytes_in_flight -= received_packets * max_datagram_size;
         }else{
-            target = w_cubic(now + min_rtt);
+            auto target = w_cubic(now + min_rtt);
             target = std::max(target, congestion_window);
             target = std::min(target, congestion_window * 1.5);
             
-            auto w_est_inc = w_est_inc(received_packets);
-            w_est += w_est_inc;
+            auto west_inc = w_est_inc(received_packets);
+            W_est += west_inc;
 
-            if (w_est >= w_max) {
+            if (W_est >= W_max) {
                 alpha_aimd = 1.0;
             }
 
             auto cubic_cwnd = congestion_window;
-
-            if (w_cubic(t) < w_est) {
+            auto t = std::chrono::high_resolution_clock::now();
+            if (w_cubic(t) < W_est) {
                 // AIMD friendly region (W_cubic(t) < W_est)
-                cubic_cwnd = std::max(cubic_cwnd, w_est);
+                cubic_cwnd = std::max(cubic_cwnd, W_est);
             } else {
                 // Concave region or convex region use same increment.
                 auto cubic_inc = max_datagram_size * (target - cubic_cwnd) / cubic_cwnd;
@@ -220,7 +212,7 @@ class Recovery{
         }
 
         ssthresh = congestion_window * BETA;
-        ssthresh = std::max(ssthresh, INI_WIN);
+        ssthresh = std::max(ssthresh, (double)INI_WIN);
         
         congestion_window = ssthresh;
         if(W_max < congestion_window){
@@ -228,8 +220,8 @@ class Recovery{
         }else{
             cubic_k(now);
         }
-        cwnd_inc = cwnd_inc * Beta;
-        w_est = congestion_window;
+        cwnd_inc = cwnd_inc * BETA;
+        W_est = congestion_window;
         alpha_aimd = ALPHA_AIMD;
         congestionEvent = 3;
         if (congestion_window == INI_WIN){
