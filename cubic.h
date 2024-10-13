@@ -12,7 +12,7 @@ const size_t PACKET_SIZE = 1350;
 
 const size_t INI_WIN = INITIAL_WINDOW_PACKETS * PACKET_SIZE;
 
-const size_t INI_SSTHREAD = 400;
+const size_t INI_SSTHREAD = 1000;
 
 const double BETA = 0.7;
 
@@ -90,7 +90,7 @@ class Recovery{
     prior_W_est(0),
     congestion_window(INITIAL_WINDOW_PACKETS * pkt_size),
     W_max(INI_WIN),
-    ssthresh(INI_SSTHREAD),
+    ssthresh(INI_SSTHREAD * pkt_size),
     K(0.0),
     W_est(0),
     cwnd_inc(0),

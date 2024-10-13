@@ -183,7 +183,7 @@ int main() {
                         else if (rv == 3){
                             // auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
                             is_application = true;
-                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_iov->iov_base), msgs[index].msg_iov->iov_len);
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), msgs[receive_number].msg_iov->iov_len);
                         // Application packet 
                         }
                         else if (rv == 5){

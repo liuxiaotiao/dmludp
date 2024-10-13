@@ -243,11 +243,11 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                 size_t buf_len = 0;
                 
                 bool partial;
-                if(std::get<2>(buf) <= MIN_SENDBUF_INITIAL_LEN){
-                    partial = true;
-                }else{
-                    partial = false;
-                }
+                // if(std::get<2>(buf) <= MIN_SENDBUF_INITIAL_LEN){
+                //     partial = true;
+                // }else{
+                //     partial = false;
+                // }
                 out_len = std::get<2>(buf);
               
                 // Copy data to the output buffer.
@@ -257,17 +257,17 @@ const size_t MIN_SENDBUF_INITIAL_LEN = SEND_BUFFER_SIZE;
                 length -= (uint64_t)(out_len);
                 used_length -= (out_len);
 
-                if (partial) {
+                // if (partial) {
                     // We reached the maximum capacity, so end here.
                     break;
-                }
+                // }
 
             }
             sent += out_len;
             // All data in the congestion control window has been sent. need to modify
-            if (sent >= max_data) {
-                stop = true;
-            }
+            // if (sent >= max_data) {
+            //     stop = true;
+            // }
             if (pos == data.size()){
                 stop = true;
             }

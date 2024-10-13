@@ -252,6 +252,16 @@ public:
 
     std::pair<uint64_t, uint64_t> packet_info;
 
+    std::vector<uint64_t> range4receive;
+
+    uint64_t receive_start;
+
+    uint64_t receive_end;
+
+    std::pair<ssize_t, ssize_t> receive_info;
+
+    std::map<uint16_t, std::pair<uint64_t, uint64_t>> send_range;
+
     ////////////////////////////////
     /*
     If using sendmsg send udp data, replace msghdr with msghdr.
@@ -273,6 +283,10 @@ public:
 
     // used to judge loss or not
     std::pair<uint64_t, uint64_t> sent_packet_range;
+
+    std::pair<uint64_t, uint64_t> current_range;
+
+    std::pair<ssize_t, ssize_t> next_range;
 
     bool difference_flag;
 
@@ -335,10 +349,22 @@ public:
     ~Connection(){};
 
     void init(){
-        send_hdr.reserve(HEADER_LENGTH);
-        send_hdrs.reserve(1);
-        send_messages.reserve(1);
-        send_iovecs.reserve(2);
+        send_hdr.resize(HEADER_LENGTH);
+        send_hdrs.resize(1);
+        send_messages.resize(1);
+        send_iovecs.resize(2);
+        Header* hdr = reinterpret_cast<Header*>(send_hdr.data());
+        hdr->ty = Type::Application;
+        hdr->pkt_num = 0;;
+        hdr->priority = 0;
+        hdr->offset = 0;
+        hdr->seq = 0;
+        hdr->ack_time = 0;
+        hdr->difference = 0;
+        send_iovecs.at(0).iov_base = (void *)send_hdr.data();
+        send_iovecs.at(0).iov_len = HEADER_LENGTH;
+        pkt_num_spaces.at(2).updatepktnum();
+        receive_info = {-1, -1};
     }
 
     void initial_rtt() {
@@ -463,7 +489,7 @@ public:
         // All side can send data.
         if (pkt_ty == Type::ACK){
             process_acknowledge(src, src_len);
-	    }
+        }
 
         if (pkt_ty == Type::ElicitAck){
             /* TODO
@@ -512,8 +538,8 @@ public:
     size_t check_status(){
         if (data_gotten == 0){
             // First add data to buffer.
-            data_gotten = 1;
             data_preparation();
+            data_gotten = 1;
         }else if(data_gotten == 1){
             // Skip
         }else if(data_gotten == 2){
@@ -523,12 +549,15 @@ public:
         }
 
         if (recovery.cwnd_available()){
-            send_packet();
             return 1;
         }
 
         auto now = std::chrono::high_resolution_clock::now();
         if ((handshake + 1.05 * srtt) > now){
+            send_status = 4;
+            // if(last_elicit_ack_pktnum == pkt_num_spaces.at(2).getpktnum()){
+            //     auto elicit_pn = pkt_num_spaces.at(2).updatepktnum();
+            // }
             double total_sent = sent_packet_range.second - sent_packet_range.first + 1;
             double acked = received_packets_dic.size();
             double unacked = total_sent - acked;
@@ -544,6 +573,23 @@ public:
         }
 
         return 0;
+    }
+
+    // Find the receive range.
+    void findRanges(uint64_t packet_) {
+        if (receive_info.first == -1){
+            receive_info = {packet_, packet_};
+        }
+
+        if (packet_ == receive_info.second + 1){
+            receive_info.second++;
+        }else if(packet_ < receive_info.second){
+            //
+        }else{
+            range4receive.push_back(receive_info.first);
+            range4receive.push_back(receive_info.second);
+            receive_info = {packet_, packet_};
+        }
     }
 
 
@@ -619,7 +665,15 @@ public:
         double acked = received_packets_dic.size();
         double unacked = total_sent - acked;
 
-        if ((pkt_num + 1)< last_elicit_ack_pktnum){
+        // When sender received 1st last elicit acknowledge packet, sender update new sequence number and 
+        // 
+        // if(pkt_num == last_elicit_ack_pktnum){
+        //     auto seq_pn = pkt_num_spaces.at(2).updatepktnum();
+        //     send_status = 0;
+        // }
+        
+
+        if ((pkt_num + 1) == last_elicit_ack_pktnum){
             if (auto search = seq2pkt.find(pkt_num) != seq2pkt.end()){
                 for(auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
                     seq2pkt.at(pkt_num).erase(check_pn);
@@ -627,6 +681,7 @@ public:
                 if(seq2pkt.at(pkt_num).size() <= (last_range.second - last_range.first + 1)*0.05){
                     recovery.rollback();
                 }
+                return;
             }
         }else{
             for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
@@ -653,7 +708,6 @@ public:
         
         if (end_pkt == sent_packet_range.second){
             pkt_ack_time = 1;
-
         }
 
         if(received_packets_dic.size() == (sent_packet_range.second - sent_packet_range.first + 1)){
@@ -662,12 +716,13 @@ public:
         }
 
         if (pkt_ack_time == 1){
-            double total_lost = total_sent - acked;
+            double total_lost = total_sent - received_packets_dic.size();
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
+            send_status = 4;
             // suprious congestion
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+                recovery.on_packet_ack(received_check - acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);
@@ -675,7 +730,9 @@ public:
                     seq2pkt[pkt_num].erase(pkt);
                 }
             }
-
+        }else{
+            auto now = std::chrono::system_clock::now();
+            recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
         }
     }
 
@@ -814,91 +871,112 @@ public:
 
 
     ssize_t send_packet(){
+        auto check0 = std::chrono::high_resolution_clock::now();
         auto send_seq = 0;
         size_t written_len = 0;
         // If has EAGAIN, continue sending, not get new packet.
+        auto check1 = std::chrono::high_resolution_clock::now();
         if (get_dmludp_error()){
-            written_len = send_iovecs.at(0).iov_len + send_iovecs.at(1).iov_len;
-        }else{
-            auto available_cwnd = recovery.cwnd_available();
-            if (available_cwnd <= 0){
-                return 0;
+            return send_iovecs.at(0).iov_len + send_iovecs.at(1).iov_len;
+        }
+        auto check2 = std::chrono::high_resolution_clock::now();
+        auto available_cwnd = recovery.cwnd_available();
+        if (available_cwnd <= 0){
+            return 0;
+        }
+        auto check3 = std::chrono::high_resolution_clock::now();
+        send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
+        auto check4 = std::chrono::high_resolution_clock::now();
+
+        auto pn = pkt_num_spaces.at(0).updatepktnum();
+        if(send_status == 0){
+            if (pn == 0){
+                
             }
+            last_range = sent_packet_range;
+            sent_packet_range.first = pn;
+            send_status = 1;
+        }
 
-            send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
-            
-            // TODO
-            // If cwnd shrink, process update seq.
-            send_seq = pkt_num_spaces.at(2).getpktnum();
 
-            ssize_t out_len = 0; 
-            Offset_len out_off = 0;
-            auto priority = 0;
-            
-            auto pn = pkt_num_spaces.at(0).updatepktnum();
+        // TODO
+        // If cwnd shrink, process update seq.
+        send_seq = pkt_num_spaces.at(2).getpktnum();
+        last_elicit_ack_pktnum = send_seq;
 
-            if(send_status == 0){
-                last_range.first = sent_packet_range.first;
-                last_range.second = sent_packet_range.second;
-                sent_packet_range.first = pn;
-                send_status = 1;
-            }
-
-            send_iovecs.resize(2);
-            send_hdrs.clear();
-            send_messages.resize(1);
-            auto s_flag = send_buffer.emit(send_iovecs[1], out_len, out_off);
-
-            sent_count += 1;
-            
-            priority = priority_calculation(out_off);
-            Type ty = Type::Application;
-
-            Header *hdr;
-            hdr = reinterpret_cast<dmludp::Header*>(send_hdr.data());
+        ssize_t out_len = 0; 
+        Offset_len out_off = 0;
+        auto priority = 0;
         
-            hdr->ty = ty;
-            hdr->pkt_num = pn;
-            hdr->priority = priority;
-            hdr->offset = out_off;
-            hdr->seq = send_seq;
-            hdr->ack_time = 0;
-            hdr->difference = send_connection_difference;
-            hdr->pkt_length = (Packet_num_len)out_len;
-            send_iovecs.at(0).iov_base = (void *)send_hdr.data();
-            send_iovecs.at(0).iov_len = HEADER_LENGTH;
-            recovery.on_packet_sent(out_len);
+        
+        auto check5 = std::chrono::high_resolution_clock::now();
+        
+        auto check6 = std::chrono::high_resolution_clock::now();
+        auto s_flag = send_buffer.emit(send_iovecs[1], out_len, out_off);
 
-            // Each sequcence coressponds to the packet range.
-            if (sent_dic.find(out_off) != sent_dic.end()){
-                if (sent_dic[out_off] != 3){
-                    sent_dic[out_off] -= 1;
-                }
-            }else{
-                sent_dic[out_off] = priority;
+        sent_count += 1;
+        auto check7 = std::chrono::high_resolution_clock::now();
+        priority = priority_calculation(out_off);
+        auto check8 = std::chrono::high_resolution_clock::now();
+        Type ty = Type::Application;
+
+        Header *hdr;
+        hdr = reinterpret_cast<dmludp::Header*>(send_hdr.data());
+        hdr->ty = ty;
+        hdr->pkt_num = pn;
+        hdr->priority = priority;
+        hdr->offset = out_off;
+        hdr->seq = send_seq;
+        hdr->difference = send_connection_difference;
+        hdr->pkt_length = (Packet_num_len)out_len;
+        send_iovecs.at(0).iov_base = (void *)send_hdr.data();
+        send_iovecs.at(0).iov_len = HEADER_LENGTH;
+        recovery.on_packet_sent(out_len);
+        auto check9 = std::chrono::high_resolution_clock::now();
+        // Each sequcence coressponds to the packet range.
+        if (sent_dic.find(out_off) != sent_dic.end()){
+            if (sent_dic[out_off] != 3){
+                sent_dic[out_off] -= 1;
             }
-            
-            pktnum2offset[pn] = out_off;
-            send_messages[0].msg_iov = &send_iovecs[0];
-            send_messages[0].msg_iovlen = 2;
-            written_len += out_len;
+        }else{
+            sent_dic[out_off] = priority;
+        }
+        auto check10 = std::chrono::high_resolution_clock::now();
+        pktnum2offset[pn] = out_off;
+        pktnum2offset.insert(make_pair(pn, out_off));
+        send_messages[0].msg_iov = &send_iovecs[0];
+        send_messages[0].msg_iovlen = 2;
+        written_len += out_len;
+        auto check11 = std::chrono::high_resolution_clock::now();
+        if (s_flag || send_status == 4){     
+            sent_packet_range.second = pn;
+            // auto seq_next = pkt_num_spaces.at(2).updatepktnum();
+            send_status = 2;
+            data_gotten = 2;
+        }
 
-            recovery.on_packet_sent(out_len);
-
-            if (s_flag){     
-                sent_packet_range.second = pn;
-                auto seq_next = pkt_num_spaces.at(2).updatepktnum();
-                send_status = 2;
-                data_gotten = 2;
-            }
-
-            if (written_len){
-                stop_ack = false;
-            }
-            packet_info.first = send_seq;
-            packet_info.second = pn;
-            written_data_len += written_len;
-        }      
+        auto check12 = std::chrono::high_resolution_clock::now();
+        if (written_len){
+            stop_ack = false;
+        }
+        // packet_info.first = send_seq;
+        // packet_info.second = pn;
+        packet_info = {send_seq, pn};
+        written_data_len += written_len;
+        auto check13 = std::chrono::high_resolution_clock::now();
+        std::cout << "check1: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check2 - check1).count() << "ns" << 
+        ", check2: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check3 - check2).count() << "ns" <<
+        ", check3: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check4 - check3).count() << "ns" <<
+        ", check4: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check5 - check4).count() << "ns" <<
+        ", check5: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check6 - check5).count() << "ns" <<
+        ", check6: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check7 - check6).count() << "ns" <<
+        ", check7: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check8 - check7).count() << "ns" <<
+        ", check8: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check9 - check8).count() << "ns" <<
+        ", check9: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check10 - check9).count() << "ns" <<
+        ", check10: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check11 - check10).count() << "ns" <<
+        ", check11: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check12 - check11).count() << "ns" <<
+        ", check13: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check12).count() << "ns" <<
+        ", total: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check0).count() << "ns" <<std::endl;
   	    return written_len;
     }
 
@@ -938,13 +1016,13 @@ public:
         hdr->seq = pn;
         hdr->difference = send_connection_difference;
 
-        uint64_t* start_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26);
+        uint64_t* start_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + HEADER_LENGTH);
         *start_ptr = start_pktnum;
         
-        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + 26 + sizeof(uint64_t));
+        uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + HEADER_LENGTH + sizeof(uint64_t));
         *end_ptr = end_pktnum;
         
-        pktlen += HEADER_LENGTH;
+        pktlen = HEADER_LENGTH + 2 * sizeof(uint64_t);
         return pktlen;
     }
 
@@ -1045,6 +1123,11 @@ public:
                 uint8_t tmp = receive_connection_difference - 1;
                 hdr->difference = tmp;
             }
+
+            // Recevie info clear.
+            receive_info = {-1, -1};
+            range4receive.clear();
+
             memcpy(out, hdr, HEADER_LENGTH);
             memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
             memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
