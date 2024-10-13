@@ -189,7 +189,7 @@ int main() {
                         else if (rv == 5){
                         }
 
-                        if(receive_count % 800 == 0){
+                        if(receive_count % 800 == 0 && receive_count != 0){
                             uint8_t ack[9000];
                             auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
                             auto sent_result = ::send(client_fd, ack, result, 0);

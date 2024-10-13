@@ -236,6 +236,8 @@ public:
 
     Packet_num_len last_elicit_ack_pktnum;
 
+    Packet_num_len next_elicit_ack_pktnum;
+
     size_t received_packets;
 
     std::set<size_t> received_packets_dic;
@@ -326,6 +328,7 @@ public:
     current_loop_min(0),
     current_loop_max(0),
     last_elicit_ack_pktnum(0),
+    next_elicit_ack_pktnum(0),
     received_packets(0),
     recovery(MAX_SEND_UDP_PAYLOAD_SIZE),
     data_gotten(0),
@@ -720,6 +723,7 @@ public:
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
             send_status = 4;
+            last_elicit_ack_pktnum = next_elicit_ack_pktnum;
             // suprious congestion
             if(loss_ratio < 0.1){
                 recovery.on_packet_ack(received_check - acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
@@ -875,56 +879,54 @@ public:
         auto send_seq = 0;
         size_t written_len = 0;
         // If has EAGAIN, continue sending, not get new packet.
-        auto check1 = std::chrono::high_resolution_clock::now();
+        // auto check1 = std::chrono::high_resolution_clock::now();
         if (get_dmludp_error()){
             return send_iovecs.at(0).iov_len + send_iovecs.at(1).iov_len;
         }
-        auto check2 = std::chrono::high_resolution_clock::now();
+        // auto check2 = std::chrono::high_resolution_clock::now();
         auto available_cwnd = recovery.cwnd_available();
         if (available_cwnd <= 0){
             return 0;
         }
-        auto check3 = std::chrono::high_resolution_clock::now();
+        // auto check3 = std::chrono::high_resolution_clock::now();
         send_buffer.update_max_data(MAX_SEND_UDP_PAYLOAD_SIZE);
-        auto check4 = std::chrono::high_resolution_clock::now();
+        // auto check4 = std::chrono::high_resolution_clock::now();
 
         auto pn = pkt_num_spaces.at(0).updatepktnum();
-        if(send_status == 0){
+
+        // TODO
+        // If cwnd shrink, process update seq.
+        send_seq = pkt_num_spaces.at(2).getpktnum();
+        next_elicit_ack_pktnum = send_seq;
+         if(send_status == 0){
             if (pn == 0){
-                
+                last_elicit_ack_pktnum = next_elicit_ack_pktnum = send_seq;
             }
             last_range = sent_packet_range;
             sent_packet_range.first = pn;
             send_status = 1;
         }
 
-
-        // TODO
-        // If cwnd shrink, process update seq.
-        send_seq = pkt_num_spaces.at(2).getpktnum();
-        last_elicit_ack_pktnum = send_seq;
-
         ssize_t out_len = 0; 
         Offset_len out_off = 0;
         auto priority = 0;
         
+        // auto check5 = std::chrono::high_resolution_clock::now();
         
-        auto check5 = std::chrono::high_resolution_clock::now();
-        
-        auto check6 = std::chrono::high_resolution_clock::now();
+        // auto check6 = std::chrono::high_resolution_clock::now();
         auto s_flag = send_buffer.emit(send_iovecs[1], out_len, out_off);
 
         sent_count += 1;
-        auto check7 = std::chrono::high_resolution_clock::now();
-        priority = priority_calculation(out_off);
-        auto check8 = std::chrono::high_resolution_clock::now();
+        // auto check7 = std::chrono::high_resolution_clock::now();
+        // priority = priority_calculation(out_off);
+        // auto check8 = std::chrono::high_resolution_clock::now();
         Type ty = Type::Application;
 
         Header *hdr;
         hdr = reinterpret_cast<dmludp::Header*>(send_hdr.data());
         hdr->ty = ty;
         hdr->pkt_num = pn;
-        hdr->priority = priority;
+        hdr->priority = 3;
         hdr->offset = out_off;
         hdr->seq = send_seq;
         hdr->difference = send_connection_difference;
@@ -932,7 +934,8 @@ public:
         send_iovecs.at(0).iov_base = (void *)send_hdr.data();
         send_iovecs.at(0).iov_len = HEADER_LENGTH;
         recovery.on_packet_sent(out_len);
-        auto check9 = std::chrono::high_resolution_clock::now();
+        // auto check9 = std::chrono::high_resolution_clock::now();
+
         // Each sequcence coressponds to the packet range.
         if (sent_dic.find(out_off) != sent_dic.end()){
             if (sent_dic[out_off] != 3){
@@ -941,13 +944,14 @@ public:
         }else{
             sent_dic[out_off] = priority;
         }
-        auto check10 = std::chrono::high_resolution_clock::now();
+
+        // auto check10 = std::chrono::high_resolution_clock::now();
         pktnum2offset[pn] = out_off;
         pktnum2offset.insert(std::make_pair(pn, out_off));
         send_messages[0].msg_iov = &send_iovecs[0];
         send_messages[0].msg_iovlen = 2;
         written_len += out_len;
-        auto check11 = std::chrono::high_resolution_clock::now();
+        // auto check11 = std::chrono::high_resolution_clock::now();
         if (s_flag || send_status == 4){     
             sent_packet_range.second = pn;
             // auto seq_next = pkt_num_spaces.at(2).updatepktnum();
@@ -955,7 +959,7 @@ public:
             data_gotten = 2;
         }
 
-        auto check12 = std::chrono::high_resolution_clock::now();
+        // auto check12 = std::chrono::high_resolution_clock::now();
         if (written_len){
             stop_ack = false;
         }
@@ -963,20 +967,20 @@ public:
         // packet_info.second = pn;
         packet_info = {send_seq, pn};
         written_data_len += written_len;
-        auto check13 = std::chrono::high_resolution_clock::now();
-        std::cout << "check1: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check2 - check1).count() << "ns" << 
-        ", check2: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check3 - check2).count() << "ns" <<
-        ", check3: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check4 - check3).count() << "ns" <<
-        ", check4: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check5 - check4).count() << "ns" <<
-        ", check5: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check6 - check5).count() << "ns" <<
-        ", check6: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check7 - check6).count() << "ns" <<
-        ", check7: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check8 - check7).count() << "ns" <<
-        ", check8: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check9 - check8).count() << "ns" <<
-        ", check9: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check10 - check9).count() << "ns" <<
-        ", check10: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check11 - check10).count() << "ns" <<
-        ", check11: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check12 - check11).count() << "ns" <<
-        ", check13: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check12).count() << "ns" <<
-        ", total: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check0).count() << "ns" <<std::endl;
+        // auto check13 = std::chrono::high_resolution_clock::now();
+        // std::cout << "check1: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check2 - check1).count() << "ns" << 
+        // ", check2: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check3 - check2).count() << "ns" <<
+        // ", check3: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check4 - check3).count() << "ns" <<
+        // ", check4: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check5 - check4).count() << "ns" <<
+        // ", check5: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check6 - check5).count() << "ns" <<
+        // ", check6: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check7 - check6).count() << "ns" <<
+        // ", check7: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check8 - check7).count() << "ns" <<
+        // ", check8: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check9 - check8).count() << "ns" <<
+        // ", check9: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check10 - check9).count() << "ns" <<
+        // ", check10: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check11 - check10).count() << "ns" <<
+        // ", check11: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check12 - check11).count() << "ns" <<
+        // ", check13: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check12).count() << "ns" <<
+        // ", total: " << std::chrono::duration_cast<std::chrono::nanoseconds>(check13 - check0).count() << "ns" <<std::endl;
   	    return written_len;
     }
 
