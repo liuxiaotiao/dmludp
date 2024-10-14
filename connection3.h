@@ -244,8 +244,7 @@ public:
 
     std::set<uint64_t> offset_dic;
 
-    // Record how many packet sent.
-    std::pair<uint64_t, uint64_t> last_range;
+    
 
     // key: seq_num, (std::pair(firstpkt, start_send), std::pair(lastpkt, end_send)
     std::map<uint64_t, std::map<uint64_t, std::chrono::system_clock::time_point>> seq2pkt;
@@ -286,9 +285,10 @@ public:
     // used to judge loss or not
     std::pair<uint64_t, uint64_t> sent_packet_range;
 
-    std::pair<uint64_t, uint64_t> current_range;
+    std::pair<uint64_t, uint64_t> next_range;
 
-    std::pair<ssize_t, ssize_t> next_range;
+    // Record how many packet sent.
+    std::pair<uint64_t, uint64_t> last_range;
 
     bool difference_flag;
 
@@ -368,6 +368,7 @@ public:
         send_iovecs.at(0).iov_len = HEADER_LENGTH;
         pkt_num_spaces.at(2).updatepktnum();
         receive_info = {-1, -1};
+        next_range = sent_packet_range = last_range = {0,0};
     }
 
     void initial_rtt() {
@@ -555,9 +556,14 @@ public:
             return 1;
         }
 
+        if (send_status == 4){
+            send_status = 3;
+            return 1;
+        }
+
         auto now = std::chrono::high_resolution_clock::now();
-        if ((handshake + 1.05 * srtt) > now){
-            send_status = 4;
+        if (handshake + 1.05 * srtt < now && send_status == 1){
+            send_status = 3;
             // if(last_elicit_ack_pktnum == pkt_num_spaces.at(2).getpktnum()){
             //     auto elicit_pn = pkt_num_spaces.at(2).updatepktnum();
             // }
@@ -573,6 +579,7 @@ public:
                 recovery.check_point();
                 recovery.congestion_event(now);
             }
+            return 1;
         }
 
         return 0;
@@ -674,7 +681,6 @@ public:
         //     auto seq_pn = pkt_num_spaces.at(2).updatepktnum();
         //     send_status = 0;
         // }
-        
 
         if ((pkt_num + 1) == last_elicit_ack_pktnum){
             if (auto search = seq2pkt.find(pkt_num) != seq2pkt.end()){
@@ -700,11 +706,11 @@ public:
                         received_check++;
                     }
                 }else{
-                    if(sent_dic.find(check_offset) != sent_dic.end()){
-                        if (sent_dic.at(check_offset) == 0){
-                            send_buffer.acknowledege_and_drop(check_offset, true);
-                        }
-                    }
+                    // if(sent_dic.find(check_offset) != sent_dic.end()){
+                    //     if (sent_dic.at(check_offset) == 0){
+                    //         send_buffer.acknowledege_and_drop(check_offset, true);
+                    //     }
+                    // }
                 }
             }
         }
@@ -898,14 +904,20 @@ public:
         // If cwnd shrink, process update seq.
         send_seq = pkt_num_spaces.at(2).getpktnum();
         next_elicit_ack_pktnum = send_seq;
-         if(send_status == 0){
+
+        if(send_status == 0){
             if (pn == 0){
                 last_elicit_ack_pktnum = next_elicit_ack_pktnum = send_seq;
             }
-            last_range = sent_packet_range;
-            sent_packet_range.first = pn;
+            // last_range = sent_packet_range;
+            // sent_packet_range.first = pn;
             send_status = 1;
         }
+
+        if (next_range == std::make_pair(0, 0)){
+            next_range.first = {pn, pn};
+        }
+        next_range.second = pn;
 
         ssize_t out_len = 0; 
         Offset_len out_off = 0;
@@ -937,13 +949,13 @@ public:
         // auto check9 = std::chrono::high_resolution_clock::now();
 
         // Each sequcence coressponds to the packet range.
-        if (sent_dic.find(out_off) != sent_dic.end()){
-            if (sent_dic[out_off] != 3){
-                sent_dic[out_off] -= 1;
-            }
-        }else{
-            sent_dic[out_off] = priority;
-        }
+        // if (sent_dic.find(out_off) != sent_dic.end()){
+        //     if (sent_dic[out_off] != 3){
+        //         sent_dic[out_off] -= 1;
+        //     }
+        // }else{
+        //     sent_dic[out_off] = priority;
+        // }
 
         // auto check10 = std::chrono::high_resolution_clock::now();
         pktnum2offset[pn] = out_off;
@@ -952,8 +964,8 @@ public:
         send_messages[0].msg_iovlen = 2;
         written_len += out_len;
         // auto check11 = std::chrono::high_resolution_clock::now();
-        if (s_flag || send_status == 4){     
-            sent_packet_range.second = pn;
+        if (s_flag){     
+            // sent_packet_range.second = pn;
             // auto seq_next = pkt_num_spaces.at(2).updatepktnum();
             send_status = 2;
             data_gotten = 2;
@@ -996,6 +1008,9 @@ public:
             // Send elicit packet
             set_handshake();
             send_status = 0;
+            last_range = sent_packet_range;
+            sent_packet_range = next_range;
+            next_range = {0, 0};
         }
         else{
             auto now = std::chrono::system_clock::now();
