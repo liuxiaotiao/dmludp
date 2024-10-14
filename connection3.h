@@ -562,7 +562,10 @@ public:
         }
 
         auto now = std::chrono::high_resolution_clock::now();
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+        auto handshake_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
         if (handshake + 1.05 * srtt < now && send_status == 1){
+            std::cout<<"now - handshake:"<<(now_ns - handshake_ns)<<", srtt:"<<srtt.count()<<std::endl;
             send_status = 3;
             // if(last_elicit_ack_pktnum == pkt_num_spaces.at(2).getpktnum()){
             //     auto elicit_pn = pkt_num_spaces.at(2).updatepktnum();
@@ -716,6 +719,7 @@ public:
         }
         
         if (end_pkt == sent_packet_range.second){
+            update_rtt();
             pkt_ack_time = 1;
         }
 
@@ -914,10 +918,15 @@ public:
             send_status = 1;
         }
 
-        if (next_range == std::make_pair(0, 0)){
-            next_range.first = {pn, pn};
+        if (next_range == std::make_pair<uint64_t, uint64_t>(0, 0)){
+            if(pn == 0){
+                next_range = {0, 1};
+            }else{
+                next_range = {pn, pn};
+            }
         }
-        next_range.second = pn;
+        if (pn != 0)
+            next_range.second = pn;
 
         ssize_t out_len = 0; 
         Offset_len out_off = 0;
@@ -1023,8 +1032,8 @@ public:
 
         size_t pktlen = 0;
 
-        uint64_t start_pktnum = sent_packet_range.first;
-        uint64_t end_pktnum =  sent_packet_range.second;
+        uint64_t start_pktnum = next_range.first;
+        uint64_t end_pktnum =  next_range.second;
 
         auto pn = pkt_num_spaces.at(1).updatepktnum();
         send_ack.resize(HEADER_LENGTH + 2 * sizeof(uint64_t));
@@ -1040,6 +1049,7 @@ public:
         
         uint64_t* end_ptr = reinterpret_cast<uint64_t*>(send_ack.data() + HEADER_LENGTH + sizeof(uint64_t));
         *end_ptr = end_pktnum;
+        std::cout<<"start_pktnum:"<<start_pktnum<<", end_pktnum:"<<end_pktnum<<std::endl;
         
         pktlen = HEADER_LENGTH + 2 * sizeof(uint64_t);
         return pktlen;
@@ -1310,6 +1320,7 @@ public:
     void set_handshake(){
         handshake = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
+        std::cout<<"handshake:"<<now_ns<<std::endl;
         received_packets = 0;
         received_packets_dic.clear();
     };
@@ -1331,11 +1342,6 @@ public:
     };
     
     Type write_pkt_type(){
-        // let now = Instant::now();
-        // if (rtt.count() == 0 && is_server == true){
-        //     handshake_completed = true;
-        //     return Type::Handshake;
-        // }
         if (rto.count() == 0 && is_server == true){
             handshake_completed = true;
             return Type::Handshake;
