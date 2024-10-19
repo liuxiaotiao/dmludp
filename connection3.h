@@ -386,7 +386,7 @@ public:
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
+        rttvar = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
         rto = srtt + 4 * rttvar;
     }
 
@@ -412,7 +412,7 @@ public:
         srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_srtt);
         auto diff = srtt - rtt;
         auto tmp_rttvar = std::chrono::duration<double, std::nano>((1 - beta) * rttvar.count() + beta * std::abs(diff.count()));
-        srtt = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
+        rttvar = std::chrono::duration_cast<std::chrono::nanoseconds>(tmp_rttvar);
         if (srtt.count() < minrtt.count()){
             minrtt = srtt;
         }
@@ -564,7 +564,7 @@ public:
         auto now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
         auto handshake_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
-        if (handshake + 1.05 * srtt < now && send_status == 1){
+        if (handshake + 1.15 * srtt < now && send_status == 1){
             std::cout<<"now - handshake:"<<(now_ns - handshake_ns)<<", srtt:"<<srtt.count()<<std::endl;
             send_status = 3;
             // if(last_elicit_ack_pktnum == pkt_num_spaces.at(2).getpktnum()){
@@ -579,6 +579,7 @@ public:
             if(loss_ratio < 0.1){
                 recovery.on_packet_ack(acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
             }else{
+                recovery.on_packet_ack(acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
                 recovery.check_point();
                 recovery.congestion_event(now);
             }
@@ -719,7 +720,6 @@ public:
         }
         
         if (end_pkt == sent_packet_range.second){
-            update_rtt();
             pkt_ack_time = 1;
         }
 
@@ -729,6 +729,7 @@ public:
         }
 
         if (pkt_ack_time == 1){
+            update_rtt();
             double total_lost = total_sent - received_packets_dic.size();
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();

@@ -260,6 +260,9 @@ class Recovery{
     }
 
     size_t cwnd_available()  {
+        if(bytes_in_flight > congestion_window){
+            return 0;
+        }
         return congestion_window - bytes_in_flight;
     };
 
