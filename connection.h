@@ -1035,7 +1035,7 @@ public:
         send_status_flag = status_;
     }
 
-    size_t get_set_status(){
+    size_t get_send_status(){
         return send_status_flag;
     }
 

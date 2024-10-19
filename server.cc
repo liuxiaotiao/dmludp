@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include "dmludp.h"
-#include "connection3.h"
+#include "connection.h"
 #include "RangeBuf.h"
 #include "cubic.h"
 #include "recv_buf.h"
@@ -282,7 +282,7 @@ int main() {
                         continue;
                     }
                     while(true){
-                        if(dmludp_connection->send_status != 3){
+                        if(dmludp_connection->get_send_status() != 3){
                             auto dmludp_sent = dmludp_connection->send_packet();
                             if(!dmludp_sent){
                                 break;
