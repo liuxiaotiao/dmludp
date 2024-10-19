@@ -249,7 +249,8 @@ public:
     // key: seq_num, (std::pair(firstpkt, start_send), std::pair(lastpkt, end_send)
     std::map<uint64_t, std::map<uint64_t, std::chrono::system_clock::time_point>> seq2pkt;
 
-    size_t send_status;
+    // size_t send_status;
+    size_t send_status_flag;
 
     std::pair<uint64_t, uint64_t> packet_info;
 
@@ -334,7 +335,7 @@ public:
     data_gotten(0),
     send_phrase(true),
     difference_flag(false),
-    send_status(0)
+    send_status_flag(0)
     {
         send_ack.reserve(42);
         Header* hdr = reinterpret_cast<Header*>(send_ack.data());
@@ -556,17 +557,17 @@ public:
             return 1;
         }
 
-        if (send_status == 4){
-            send_status = 3;
+        if (get_send_status() == 4){
+            set_send_status(3);
             return 1;
         }
 
         auto now = std::chrono::high_resolution_clock::now();
         auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
         auto handshake_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(handshake.time_since_epoch()).count();
-        if (handshake + 1.15 * srtt < now && send_status == 1){
+        if (handshake + 1.15 * srtt < now && get_send_status() == 1){
             std::cout<<"now - handshake:"<<(now_ns - handshake_ns)<<", srtt:"<<srtt.count()<<std::endl;
-            send_status = 3;
+            set_send_status(3);
             // if(last_elicit_ack_pktnum == pkt_num_spaces.at(2).getpktnum()){
             //     auto elicit_pn = pkt_num_spaces.at(2).updatepktnum();
             // }
@@ -733,7 +734,7 @@ public:
             double total_lost = total_sent - received_packets_dic.size();
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
-            send_status = 4;
+            set_send_status(4);
             last_elicit_ack_pktnum = next_elicit_ack_pktnum;
             // suprious congestion
             if(loss_ratio < 0.1){
@@ -910,13 +911,13 @@ public:
         send_seq = pkt_num_spaces.at(2).getpktnum();
         next_elicit_ack_pktnum = send_seq;
 
-        if(send_status == 0){
+        if(get_send_status() == 0){
             if (pn == 0){
                 last_elicit_ack_pktnum = next_elicit_ack_pktnum = send_seq;
             }
             // last_range = sent_packet_range;
             // sent_packet_range.first = pn;
-            send_status = 1;
+            set_send_status(1);
         }
 
         if (next_range == std::make_pair<uint64_t, uint64_t>(0, 0)){
@@ -977,7 +978,7 @@ public:
         if (s_flag){     
             // sent_packet_range.second = pn;
             // auto seq_next = pkt_num_spaces.at(2).updatepktnum();
-            send_status = 2;
+            set_send_status(2);
             data_gotten = 2;
         }
 
@@ -1012,12 +1013,14 @@ public:
             return;
         }
         
-        if(send_status == 2){
-            send_status = 3;
-        }else if(send_status == 3){
+        auto sendstatus = get_send_status();
+        if(sendstatus == 2){
+            set_send_status(3);
+        }else if(sendstatus == 3){
             // Send elicit packet
             set_handshake();
-            send_status = 0;
+            // send_status = 0;
+            set_send_status(0);
             last_range = sent_packet_range;
             sent_packet_range = next_range;
             next_range = {0, 0};
@@ -1026,6 +1029,14 @@ public:
             auto now = std::chrono::system_clock::now();
             seq2pkt[packet_info.first][packet_info.second] = now;
         }
+    }
+
+    void set_send_status(int status_){
+        send_status_flag = status_;
+    }
+
+    size_t get_set_status(){
+        return send_status_flag;
     }
 
     ssize_t send_elicit_ack_message_pktnum_new3(){
