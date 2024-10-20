@@ -678,6 +678,7 @@ public:
 
         double total_sent = sent_packet_range.second - sent_packet_range.first + 1;
         double acked = received_packets_dic.size();
+        // unacked is left need to be acknowldge packets
         double unacked = total_sent - acked;
 
         // When sender received 1st last elicit acknowledge packet, sender update new sequence number and 
@@ -737,8 +738,14 @@ public:
             set_send_status(4);
             last_elicit_ack_pktnum = next_elicit_ack_pktnum;
             // suprious congestion
+            /*
+            Oct 19:
+            Two acknowledge packet was deem as pkt_ack_time == 1
+            1. Acknowledge packet come from Elicit packet
+            2. Partial acknowledge packet but the end range is last maximum pkt.
+            */
             if(loss_ratio < 0.1){
-                recovery.on_packet_ack(received_check - acked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+                recovery.on_packet_ack(unacked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
             }else{
                 recovery.check_point();
                 recovery.congestion_event(now);

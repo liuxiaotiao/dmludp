@@ -12,7 +12,7 @@ const size_t PACKET_SIZE = 1350;
 
 const size_t INI_WIN = INITIAL_WINDOW_PACKETS * PACKET_SIZE;
 
-const size_t INI_SSTHREAD = 1000;
+const size_t INI_SSTHREAD = 2000;
 
 const double BETA = 0.7;
 

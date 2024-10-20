@@ -20,6 +20,7 @@
 #define SERVER_IP "10.10.1.1"
 #define FILE_SIZE 104857600
 #define RECEIVE_TIME 2
+#define RECEIVE_BUFFER_LENGTH 3000
 
 int main() {
     int client_fd, epoll_fd;
@@ -121,6 +122,18 @@ int main() {
     }
     dmludp_conn_recv_reset(dmludp_connection);
     dmludp_conn_rx_len(dmludp_connection, FILE_SIZE);
+    struct msghdr msgs[RECEIVE_BUFFER_LENGTH];
+    struct iovec iovecs[RECEIVE_BUFFER_LENGTH];
+    uint8_t bufs[RECEIVE_BUFFER_LENGTH][1500];
+
+    for (int i = 0; i < RECEIVE_BUFFER_LENGTH; i++) {
+        iovecs[i].iov_base = bufs[i];
+        iovecs[i].iov_len = sizeof(bufs[i]);
+        msgs[i].msg_iov = &iovecs[i];
+        msgs[i].msg_iovlen = 1;
+        msgs[i].msg_name = NULL;
+        msgs[i].msg_namelen = 0;
+    }
     size_t recv_time = 1;
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
@@ -132,19 +145,6 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == client_fd) {
                 if (events[n].events & EPOLLIN){
-                    struct msghdr msgs[800];
-                    struct iovec iovecs[800];
-                    uint8_t bufs[800][9000];
-
-                    for (int i = 0; i < 800; i++) {
-                        iovecs[i].iov_base = bufs[i];
-                        iovecs[i].iov_len = sizeof(bufs[i]);
-                        msgs[i].msg_iov = &iovecs[i];
-                        msgs[i].msg_iovlen = 1;
-                        msgs[i].msg_name = NULL;
-                        msgs[i].msg_namelen = 0;
-                    }
-
                     bool is_application = false;
                     bool has_elicit_packet = false;
                     int receive_number = 0;
@@ -189,8 +189,8 @@ int main() {
                         else if (rv == 5){
                         }
 
-                        if(receive_count % 800 == 0 && receive_count != 0){
-                            uint8_t ack[9000];
+                        if(receive_count % 1000 == 0 && receive_count != 0){
+                            uint8_t ack[1500];
                             auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
                             auto sent_result = ::send(client_fd, ack, result, 0);
                             dmludp_update_receive_parameters(dmludp_connection);
@@ -199,7 +199,7 @@ int main() {
                     }
 
                     if (!has_elicit_packet && is_application){
-                        uint8_t ack[9000];
+                        uint8_t ack[1500];
                         auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
                         auto sent_result = ::send(client_fd, ack, result, 0);
                         dmludp_update_receive_parameters(dmludp_connection);

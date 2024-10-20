@@ -8,12 +8,4 @@ acknowledge time(1 byte)
 difference(1 byte)
 pkt_length(2 bytes)
 
-Add partial send_mmsg
-others follows v2.1
-no longer use map to store send_buf
-use deque store it again
-update: 
-merge mmsghdr to connection
-
-Target:
-fix receive_buf.h
+Use range substitute the original each packet acknowledge

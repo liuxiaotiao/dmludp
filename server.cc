@@ -19,6 +19,7 @@
 #define MAX_EVENTS 10
 #define CLIENT_IP "10.10.1.2"
 #define SEND_TIME 2000
+#define RECEIVE_BUFFER_LENGTH 3000
 
 int main() {
     // std::ifstream file("randomfile.bin", std::ios::binary | std::ios::ate);
@@ -147,18 +148,18 @@ int main() {
         close(server_fd);
         return -1;
     }
-    struct mmsghdr msgs[100];
-    struct iovec iovecs[100];
-    uint8_t bufs[100][9000];
+    // struct mmsghdr msgs[100];
+    // struct iovec iovecs[100];
+    // uint8_t bufs[100][9000];
 
-    for (int i = 0; i < 100; i++) {
-        iovecs[i].iov_base = bufs[i];
-        iovecs[i].iov_len = sizeof(bufs[i]);
-        msgs[i].msg_hdr.msg_iov = &iovecs[i];
-        msgs[i].msg_hdr.msg_iovlen = 1;
-        msgs[i].msg_hdr.msg_name = NULL;
-        msgs[i].msg_hdr.msg_namelen = 0;
-    }
+    // for (int i = 0; i < 100; i++) {
+    //     iovecs[i].iov_base = bufs[i];
+    //     iovecs[i].iov_len = sizeof(bufs[i]);
+    //     msgs[i].msg_hdr.msg_iov = &iovecs[i];
+    //     msgs[i].msg_hdr.msg_iovlen = 1;
+    //     msgs[i].msg_hdr.msg_name = NULL;
+    //     msgs[i].msg_hdr.msg_namelen = 0;
+    // }
 
     std::vector<std::shared_ptr<Header>> hdrs;
     std::vector<struct mmsghdr> messages;
@@ -179,6 +180,18 @@ int main() {
     auto start = std::chrono::high_resolution_clock::now();
     bool first_check = true;
     size_t send_time = 1;
+    std::vector<struct msghdr> msgs(RECEIVE_BUFFER_LENGTH);
+    std::vector<struct iovec> iovecs(RECEIVE_BUFFER_LENGTH);
+    uint8_t bufs[RECEIVE_BUFFER_LENGTH][1500];
+
+    for (int i = 0; i < RECEIVE_BUFFER_LENGTH; i++) {
+        iovecs[i].iov_base = bufs[i];
+        iovecs[i].iov_len = sizeof(bufs[i]);
+        msgs[i].msg_iov = &iovecs[i];
+        msgs[i].msg_iovlen = 1;
+        msgs[i].msg_name = NULL;
+        msgs[i].msg_namelen = 0;
+    }
     while (true) {
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1);
         if (nfds == -1) {
@@ -188,8 +201,68 @@ int main() {
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == server_fd) {
                 if (events[n].events & EPOLLIN){
+                    // while(true){
+                    //     auto retval = recvmmsg(server_fd, msgs, 100, 0, NULL);
+                    //     if (retval == -1){
+                    //         if (errno == EAGAIN) {
+                    //             break;
+                    //         }
+                    //         if (errno == EINTR){
+                    //             continue;
+                    //         }
+                    //     }
+                    //     for (auto index = 0; index < retval; index++){
+                    //         auto read = msgs[index].msg_len;
+                    //         if (read > 0){
+                    //             auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
+                    //             uint32_t offset;
+                    //             uint64_t pkt_num;
+                    //             auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
+                    //             // Elicit ack
+                    //             if(rv == 4){
+                    //                 uint8_t out[9000];
+                    //                 ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                    //                 ssize_t socketwrite = ::send(server_fd, out, dmludpwrite, 0);
+                    //             }
+                    //             else if (rv == 6){
+                    //                 // Packet completes tranmission and start to iov.
+                    //                 uint8_t out[9000];
+                    //                 auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
+                    //                 ssize_t socket_write = ::send(server_fd, out, stopsize, 0);
+                    //                 break;
+                    //             }
+                    //             else if (rv == 3){
+                    //             // Application packet 
+                    //             }
+                    //             else if (rv == 5){
+                    //                 if(dmludp_transmission_complete(dmludp_connection)){
+                    //                     auto end = std::chrono::high_resolution_clock::now();
+                    //                     // 计算持续时间
+                    //                     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                    //                     dmludp_conn_clear_sent_once(dmludp_connection);
+                    //                     // 输出执行时间
+                    //                     std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
+                    //                     if (send_time == SEND_TIME){
+                    //                         return 0;
+                    //                     } 
+                    //                     start = std::chrono::high_resolution_clock::now();
+                    //                     std::array<struct iovec, 1> siov;
+                    //                     siov[0].iov_base = data.data();
+                    //                     siov[0].iov_len = data.size();
+                    //                     bool w2dmludp = dmludp_get_data(dmludp_connection, siov.data(), 1);
+
+                    //                     if (!w2dmludp){
+                    //                         return false;
+                    //                     }
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    int receive_number = 0;
                     while(true){
-                        auto retval = recvmmsg(server_fd, msgs, 100, 0, NULL);
+                        auto retval = recvmsg(server_fd, msgs.data() + receive_number, 0);
+
                         if (retval == -1){
                             if (errno == EAGAIN) {
                                 break;
@@ -198,54 +271,58 @@ int main() {
                                 continue;
                             }
                         }
-                        for (auto index = 0; index < retval; index++){
-                            auto read = msgs[index].msg_len;
-                            if (read > 0){
-                                auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
-                                uint32_t offset;
-                                uint64_t pkt_num;
-                                auto rv = dmludp_header_info(static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), 26, offset, pkt_num);
-                                // Elicit ack
-                                if(rv == 4){
-                                    uint8_t out[9000];
-                                    ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
-                                    ssize_t socketwrite = ::send(server_fd, out, dmludpwrite, 0);
-                                }
-                                else if (rv == 6){
-                                    // Packet completes tranmission and start to iov.
-                                    uint8_t out[9000];
-                                    auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
-                                    ssize_t socket_write = ::send(server_fd, out, stopsize, 0);
-                                    break;
-                                }
-                                else if (rv == 3){
-                                // Application packet 
-                                }
-                                else if (rv == 5){
-                                    if(dmludp_transmission_complete(dmludp_connection)){
-                                        auto end = std::chrono::high_resolution_clock::now();
-                                        // 计算持续时间
-                                        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-                                        dmludp_conn_clear_sent_once(dmludp_connection);
-                                        // 输出执行时间
-                                        std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
-                                        if (send_time == SEND_TIME){
-                                            return 0;
-                                        } 
-                                        start = std::chrono::high_resolution_clock::now();
-                                        std::array<struct iovec, 1> siov;
-                                        siov[0].iov_base = data.data();
-                                        siov[0].iov_len = data.size();
-                                        bool w2dmludp = dmludp_get_data(dmludp_connection, siov.data(), 1);
 
-                                        if (!w2dmludp){
-                                            return false;
-                                        }
-                                    }
+                        uint32_t offset;
+                        uint64_t pkt_num;
+                        auto rv = dmludp_process_header_info(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), 26, offset, pkt_num);
+                        if(rv == 4){
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), msgs[receive_number].msg_iov->iov_len);
+                            ssize_t dmludpwrite = dmludp_conn_send(dmludp_connection, out, sizeof(out));
+                            ssize_t socketwrite = ::send(server_fd, out, dmludpwrite, 0);
+                            dmludp_update_receive_parameters(dmludp_connection);
+                        }
+                        else if (rv == 6){
+                            // Packet completes tranmission and start to iov.
+                            auto stopsize = dmludp_send_data_stop(dmludp_connection, out, sizeof(out));
+                            ssize_t socket_write = ::send(server_fd, out, stopsize, 0);
+                            auto ispadding = true;
+                            break;
+                        }
+                        else if (rv == 3){
+                            // auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[index].msg_hdr.msg_iov->iov_base), read);
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), msgs[receive_number].msg_iov->iov_len);
+                        // Application packet 
+                        }
+                        else if (rv == 5){
+                            auto dmludpread = dmludp_conn_recv(dmludp_connection, static_cast<uint8_t *>(msgs[receive_number].msg_iov->iov_base), msgs[receive_number].msg_iov->iov_len);
+                            if(dmludp_transmission_complete(dmludp_connection)){
+                                auto end = std::chrono::high_resolution_clock::now();
+                                // 计算持续时间
+                                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                                dmludp_conn_clear_sent_once(dmludp_connection);
+                                // 输出执行时间
+                                std::cout << send_time++ << " Duration: " << duration.count() << " microseconds" << std::endl;
+                                if (send_time == SEND_TIME){
+                                    return 0;
+                                } 
+                                start = std::chrono::high_resolution_clock::now();
+                                std::array<struct iovec, 1> siov;
+                                siov[0].iov_base = data.data();
+                                siov[0].iov_len = data.size();
+                                bool w2dmludp = dmludp_get_data(dmludp_connection, siov.data(), 1);
+
+                                if (!w2dmludp){
+                                    return false;
                                 }
                             }
+                            if(dmludp_connection->get_send_status() == 4){
+                                break;
+                            }
                         }
+
+                        receive_count++;
                     }
+
                 }
 
 
@@ -299,6 +376,9 @@ int main() {
                                 break;
                             }
                             dmludp_connection->send_packet_complete();
+                            if(dmludp_connection->get_send_status() == 4 && !dmludp_connection->recovery.cwnd_available()){
+                                dmludp_connection->set_send_status(3);
+                            }
                         }
                         else{
                             auto result = dmludp_connection->send_elicit_ack_message_pktnum_new3();
