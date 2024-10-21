@@ -18,7 +18,7 @@
 #define PORT 12355
 #define MAX_EVENTS 10
 #define CLIENT_IP "10.10.1.2"
-#define SEND_TIME 2000
+#define SEND_TIME 2
 #define RECEIVE_BUFFER_LENGTH 3000
 
 int main() {
@@ -357,6 +357,9 @@ int main() {
                     auto dmludp_status = dmludp_connection->check_status();
                     if(dmludp_status != 1){
                         continue;
+                    }
+                    if(dmludp_connection->get_send_status() == 4 && !dmludp_connection->recovery.cwnd_available()){
+                        dmludp_connection->set_send_status(3);
                     }
                     while(true){
                         if(dmludp_connection->get_send_status() != 3){

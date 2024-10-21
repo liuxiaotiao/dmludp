@@ -158,13 +158,21 @@ class Recovery{
         const std::chrono::system_clock::time_point& now, std::chrono::seconds min_rtt){
         if(congestionEvent == 1){
             congestion_window += received_packets * max_datagram_size;
-            bytes_in_flight -= received_packets * max_datagram_size;
+            if (bytes_in_flight > received_packets * max_datagram_size){
+                bytes_in_flight -= received_packets * max_datagram_size;
+            }else{
+                bytes_in_flight = 0;
+            }
             if (congestion_window >= ssthresh){
                 congestionEvent = 2;
             }
         }else if(congestionEvent == 2){
             congestion_window += 1.25 * received_packets * max_datagram_size;
-            bytes_in_flight -= received_packets * max_datagram_size;
+            if (bytes_in_flight > received_packets * max_datagram_size){
+                bytes_in_flight -= received_packets * max_datagram_size;
+            }else{
+                bytes_in_flight = 0;
+            }
         }else{
             auto target = w_cubic(now + min_rtt);
             target = std::max(target, congestion_window);

@@ -496,6 +496,10 @@ public:
             process_acknowledge(src, src_len);
         }
 
+        if (pkt_ty == Type::FastAck){
+            process_fast_acknowledge(src, src_len);
+        }
+
         if (pkt_ty == Type::ElicitAck){
             /* TODO
             Differenciate 2 scenario:
@@ -616,6 +620,7 @@ public:
         // auto pkt_len = reinterpret_cast<Header *>(data)->pkt_length;
         Difference_len pkt_difference = reinterpret_cast<Header *>(data)->difference;
         auto pkt_seq = reinterpret_cast<Header *>(data)->seq;
+        findRanges(pn);
 
         if (result == Type::Application){
             // std::cout<<"[Debug] application packet:"<<pn<<", off:"<<off<<", len:"<<pkt_len<<", difference:"<<(int)pkt_difference<<", receive_connection_difference:"<<(int)receive_connection_difference<<std::endl;
@@ -696,8 +701,8 @@ public:
                 if(seq2pkt.at(pkt_num).size() <= (last_range.second - last_range.first + 1)*0.05){
                     recovery.rollback();
                 }
-                return;
             }
+            return;
         }else{
             for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
                 auto check_offset = pktnum2offset[check_pn];
@@ -736,7 +741,11 @@ public:
             double loss_ratio = total_lost / total_sent;
             auto now = std::chrono::system_clock::now();
             set_send_status(4);
-            last_elicit_ack_pktnum = next_elicit_ack_pktnum;
+            /////
+            send_buffer.recovery_data();
+            send_buffer.reset_iterator();
+            /////
+            // last_elicit_ack_pktnum = next_elicit_ack_pktnum;
             // suprious congestion
             /*
             Oct 19:
@@ -758,6 +767,212 @@ public:
             recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
         }
     }
+
+    void process_fast_acknowledge(uint8_t* src, size_t src_len){
+        Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
+        Acknowledge_time_len pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
+        Difference_len pkt_difference = reinterpret_cast<Header *>(src)->difference;
+        size_t received_check = 0;
+        uint8_t tmp_send_connection_difference = send_connection_difference + 1;
+        uint8_t range_count = src[HEADER_LENGTH];
+
+        if(send_connection_difference != pkt_difference){
+            if (tmp_send_connection_difference == pkt_difference){
+                send_buffer.clear();
+            }
+            return;
+        }
+
+        double total_sent = sent_packet_range.second - sent_packet_range.first + 1;
+        double acked = received_packets_dic.size();
+        // unacked is left need to be acknowldge packets
+        double unacked = total_sent - acked;
+
+        if ((pkt_num + 1) == last_elicit_ack_pktnum){
+            if (auto search = seq2pkt.find(pkt_num) != seq2pkt.end()){
+                for(auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+                    seq2pkt.at(pkt_num).erase(check_pn);
+                }
+                if(seq2pkt.at(pkt_num).size() <= (last_range.second - last_range.first + 1)*0.05){
+                    recovery.rollback();
+                }
+            }
+            return;
+        }else{
+            for (auto i = 0; i < range_count; i++){
+                uint64_t start = *reinterpret_cast<uint64_t*>(src + i * sizeof(uint64_t));
+                uint64_t end = *reinterpret_cast<uint64_t*>(buffer + i * sizeof(uint64_t) + sizeof(uint64_t));
+                for(auto check_pn = start; check_pn < end; check_pn++){
+                    send_buffer.acknowledege_and_drop(check_offset, true);
+                    if (check_pn <= sent_packet_range.second && check_pn >= sent_packet_range.first){
+                        received_packets++;
+                        received_packets_dic.insert(check_pn);
+                        received_check++;
+                    }
+                }
+            }
+            // for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+            //     auto check_offset = pktnum2offset[check_pn];
+                
+            //     auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
+        
+            //     if (src[received_] == 0){
+            //         send_buffer.acknowledege_and_drop(check_offset, true);
+            //         if (check_pn <= sent_packet_range.second && check_pn >= sent_packet_range.first){
+            //             received_packets++;
+            //             received_packets_dic.insert(check_pn);
+            //             received_check++;
+            //         }
+            //     }else{
+            //         // if(sent_dic.find(check_offset) != sent_dic.end()){
+            //         //     if (sent_dic.at(check_offset) == 0){
+            //         //         send_buffer.acknowledege_and_drop(check_offset, true);
+            //         //     }
+            //         // }
+            //     }
+            // }
+        }
+        
+        if (end_pkt == sent_packet_range.second){
+            pkt_ack_time = 1;
+        }
+
+        if(received_packets_dic.size() == (sent_packet_range.second - sent_packet_range.first + 1)){
+            pkt_ack_time = 1;
+            seq2pkt.erase(pkt_num);
+        }
+
+        if (pkt_ack_time == 1){
+            update_rtt();
+            double total_lost = total_sent - received_packets_dic.size();
+            double loss_ratio = total_lost / total_sent;
+            auto now = std::chrono::system_clock::now();
+            set_send_status(4);
+            /////
+            send_buffer.recovery_data();
+            send_buffer.reset_iterator();
+            /////
+            // last_elicit_ack_pktnum = next_elicit_ack_pktnum;
+            // suprious congestion
+            /*
+            Oct 19:
+            Two acknowledge packet was deem as pkt_ack_time == 1
+            1. Acknowledge packet come from Elicit packet
+            2. Partial acknowledge packet but the end range is last maximum pkt.
+            */
+            if(loss_ratio < 0.1){
+                recovery.on_packet_ack(unacked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+            }else{
+                recovery.check_point();
+                recovery.congestion_event(now);
+                for (const auto pkt: received_packets_dic){
+                    seq2pkt[pkt_num].erase(pkt);
+                }
+            }
+        }else{
+            auto now = std::chrono::system_clock::now();
+            recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+        }
+    }
+
+    // void process_acknowledge(uint8_t* src, size_t src_len){
+    //     Packet_num_len pkt_num = reinterpret_cast<Header *>(src)->pkt_num;
+    //     Acknowledge_time_len pkt_ack_time = reinterpret_cast<Header *>(src)->ack_time;
+    //     Difference_len pkt_difference = reinterpret_cast<Header *>(src)->difference;
+    //     size_t received_check = 0;
+    //     uint8_t tmp_send_connection_difference = send_connection_difference + 1;
+
+    //     if(send_connection_difference != pkt_difference){
+    //         if (tmp_send_connection_difference == pkt_difference){
+    //             send_buffer.clear();
+    //         }
+    //         return;
+    //     }
+    //     auto first_pkt = *(uint64_t *)(src + HEADER_LENGTH);
+    //     auto end_pkt = *(uint64_t *)(src + HEADER_LENGTH + sizeof(uint64_t));
+
+    //     double total_sent = sent_packet_range.second - sent_packet_range.first + 1;
+    //     double acked = received_packets_dic.size();
+    //     // unacked is left need to be acknowldge packets
+    //     double unacked = total_sent - acked;
+
+    //     // When sender received 1st last elicit acknowledge packet, sender update new sequence number and 
+    //     // 
+    //     // if(pkt_num == last_elicit_ack_pktnum){
+    //     //     auto seq_pn = pkt_num_spaces.at(2).updatepktnum();
+    //     //     send_status = 0;
+    //     // }
+
+    //     if ((pkt_num + 1) == last_elicit_ack_pktnum){
+    //         if (auto search = seq2pkt.find(pkt_num) != seq2pkt.end()){
+    //             for(auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+    //                 seq2pkt.at(pkt_num).erase(check_pn);
+    //             }
+    //             if(seq2pkt.at(pkt_num).size() <= (last_range.second - last_range.first + 1)*0.05){
+    //                 recovery.rollback();
+    //             }
+    //             return;
+    //         }
+    //     }else{
+    //         for (auto check_pn = first_pkt; check_pn <= end_pkt; check_pn++){
+    //             auto check_offset = pktnum2offset[check_pn];
+                
+    //             auto received_ = check_pn - first_pkt + 2 * sizeof(Packet_num_len) + HEADER_LENGTH;
+        
+    //             if (src[received_] == 0){
+    //                 send_buffer.acknowledege_and_drop(check_offset, true);
+    //                 if (check_pn <= sent_packet_range.second && check_pn >= sent_packet_range.first){
+    //                     received_packets++;
+    //                     received_packets_dic.insert(check_pn);
+    //                     received_check++;
+    //                 }
+    //             }else{
+    //                 // if(sent_dic.find(check_offset) != sent_dic.end()){
+    //                 //     if (sent_dic.at(check_offset) == 0){
+    //                 //         send_buffer.acknowledege_and_drop(check_offset, true);
+    //                 //     }
+    //                 // }
+    //             }
+    //         }
+    //     }
+        
+    //     if (end_pkt == sent_packet_range.second){
+    //         pkt_ack_time = 1;
+    //     }
+
+    //     if(received_packets_dic.size() == (sent_packet_range.second - sent_packet_range.first + 1)){
+    //         pkt_ack_time = 1;
+    //         seq2pkt.erase(pkt_num);
+    //     }
+
+    //     if (pkt_ack_time == 1){
+    //         update_rtt();
+    //         double total_lost = total_sent - received_packets_dic.size();
+    //         double loss_ratio = total_lost / total_sent;
+    //         auto now = std::chrono::system_clock::now();
+    //         set_send_status(4);
+    //         last_elicit_ack_pktnum = next_elicit_ack_pktnum;
+    //         // suprious congestion
+    //         /*
+    //         Oct 19:
+    //         Two acknowledge packet was deem as pkt_ack_time == 1
+    //         1. Acknowledge packet come from Elicit packet
+    //         2. Partial acknowledge packet but the end range is last maximum pkt.
+    //         */
+    //         if(loss_ratio < 0.1){
+    //             recovery.on_packet_ack(unacked, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+    //         }else{
+    //             recovery.check_point();
+    //             recovery.congestion_event(now);
+    //             for (const auto pkt: received_packets_dic){
+    //                 seq2pkt[pkt_num].erase(pkt);
+    //             }
+    //         }
+    //     }else{
+    //         auto now = std::chrono::system_clock::now();
+    //         recovery.on_packet_ack(received_check, total_sent, now, std::chrono::duration_cast<std::chrono::seconds>(minrtt));
+    //     }
+    // }
 
     void clear_recv_setting(){
         recv_dic.clear();
@@ -915,7 +1130,8 @@ public:
 
         // TODO
         // If cwnd shrink, process update seq.
-        send_seq = pkt_num_spaces.at(2).getpktnum();
+        
+        send_seq = pkt_num_spaces.at(1).getpktnum() + 1;
         next_elicit_ack_pktnum = send_seq;
 
         if(get_send_status() == 0){
@@ -934,9 +1150,10 @@ public:
                 next_range = {pn, pn};
             }
         }
-        if (pn != 0)
+        if (pn != 0){
             next_range.second = pn;
-
+        }
+            
         ssize_t out_len = 0; 
         Offset_len out_off = 0;
         auto priority = 0;
@@ -1031,6 +1248,8 @@ public:
             last_range = sent_packet_range;
             sent_packet_range = next_range;
             next_range = {0, 0};
+            last_elicit_ack_pktnum = next_elicit_ack_pktnum;
+            send_buffer.pos = 0;
         }
         else{
             auto now = std::chrono::system_clock::now();
@@ -1165,7 +1384,13 @@ public:
         }
 
         if (ty == Type::ACK){
-            psize = (uint64_t)(receive_result.size()) + 2 * sizeof(uint64_t);
+            // If acknowledge too long, just 1000 acknowledge lastest part.
+            if(receive_result.size() > 1200){
+                psize = 1200 + 2 * sizeof(uint64_t);
+            }else{
+                psize = (uint64_t)(receive_result.size()) + 2 * sizeof(uint64_t);
+            }
+            
             Header* hdr = new Header(ty, send_num, 0, 0, send_num, 1, receive_connection_difference, psize);
             if (difference_flag){
                 uint8_t tmp = receive_connection_difference - 1;
@@ -1177,9 +1402,19 @@ public:
             range4receive.clear();
 
             memcpy(out, hdr, HEADER_LENGTH);
-            memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
-            memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
-            memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data(), receive_result.size());
+            if(receive_range.second - receive_range.first <= 1199){
+                memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
+                memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
+                memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data(), receive_result.size());
+            }else{
+                // memcpy(out + HEADER_LENGTH, &receive_range.first, sizeof(uint64_t));
+                auto first_pn = receive_range.second - 1199;
+                auto range_offset = first_pn - receive_range.first;
+                memcpy(out + HEADER_LENGTH, &first_pn, sizeof(uint64_t));
+                memcpy(out + HEADER_LENGTH + sizeof(uint64_t), &receive_range.second, sizeof(uint64_t));
+                memcpy(out + HEADER_LENGTH + 2 * sizeof(uint64_t), receive_result.data() + range_offset, 1200);
+            }
+            
             receive_result.clear();
             difference_flag = false;
             delete hdr; 
@@ -1203,33 +1438,68 @@ public:
         }
     }
 
+    // size_t send_data_acknowledge(uint8_t* src, size_t src_len){
+    //     auto ty = Type::ACK;
+    //     auto start = current_loop_min;
+    //     auto end = current_loop_max;
+    //     uint64_t psize = end - start + 1;
+    //     Header* hdr = new Header(ty, send_num, 0, 0, send_num, 0, receive_connection_difference, psize);
+    //     if(difference_flag){
+    //         uint8_t tmp = receive_connection_difference - 1;
+    //         hdr->difference = tmp;
+    //     }
+    //     memcpy(src, hdr, HEADER_LENGTH);
+    //     memcpy(src + HEADER_LENGTH, &start, sizeof(Packet_num_len));
+    //     memcpy(src + HEADER_LENGTH + sizeof(Packet_num_len), &end, sizeof(Packet_num_len));
+
+    //     for (auto pn = start; pn <= end; pn++){
+    //         auto off_ = HEADER_LENGTH + 2 * sizeof(Packet_num_len) + pn - start;
+    //         if(difference_flag){
+    //             src[off_] = 0;
+    //         }else{
+    //             if(receive_pktnum2offset.find(pn) == receive_pktnum2offset.end()){
+    //                 src[off_] = 1;
+    //             }else{
+    //                 src[off_] = 0;
+    //             }
+    //         }
+    //     }
+    //     psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);
+    //     difference_flag = false;
+    //     update_receive_parameter();
+    //     delete hdr; 
+    //     hdr = nullptr; 
+    //     return psize;
+    // }
+
+    // If receiver should send fast acknowledge packet
+    bool is_limit(){
+        if (range4receive.size() == 65){
+            return true;
+        }
+        return false;
+    }
+
     size_t send_data_acknowledge(uint8_t* src, size_t src_len){
-        auto ty = Type::ACK;
+        auto ty = Type::FastAck;
         auto start = current_loop_min;
         auto end = current_loop_max;
-        uint64_t psize = end - start + 1;
+        uint64_t psize = range4receive.size() * sizeof(uint64_t);
         Header* hdr = new Header(ty, send_num, 0, 0, send_num, 0, receive_connection_difference, psize);
         if(difference_flag){
             uint8_t tmp = receive_connection_difference - 1;
             hdr->difference = tmp;
         }
         memcpy(src, hdr, HEADER_LENGTH);
-        memcpy(src + HEADER_LENGTH, &start, sizeof(Packet_num_len));
-        memcpy(src + HEADER_LENGTH + sizeof(Packet_num_len), &end, sizeof(Packet_num_len));
-
-        for (auto pn = start; pn <= end; pn++){
-            auto off_ = HEADER_LENGTH + 2 * sizeof(Packet_num_len) + pn - start;
-            if(difference_flag){
-                src[off_] = 0;
-            }else{
-                if(receive_pktnum2offset.find(pn) == receive_pktnum2offset.end()){
-                    src[off_] = 1;
-                }else{
-                    src[off_] = 0;
-                }
-            }
+        if (range4receive.size() % 2 != 0){
+            std::cout<<"[Error] Wrong range4receive.size()";
+            _Exit(0);
         }
-        psize += HEADER_LENGTH + 2 * sizeof(Packet_num_len);
+        memcpy(src + HEADER_LENGTH, (uint8_t)range4receive.size()/2);
+        memcpy(src + HEADER_LENGTH + sizeof(uint8_t), range4receive.data(), psize);
+
+        psize += HEADER_LENGTH + 2 * sizeof(uint8_t);
+        range4receive.clear();
         difference_flag = false;
         update_receive_parameter();
         delete hdr; 

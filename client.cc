@@ -189,11 +189,15 @@ int main() {
                         else if (rv == 5){
                         }
 
-                        if(receive_count % 1000 == 0 && receive_count != 0){
-                            uint8_t ack[1500];
-                            auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
-                            auto sent_result = ::send(client_fd, ack, result, 0);
-                            dmludp_update_receive_parameters(dmludp_connection);
+                        // if(receive_count == 1200 && receive_count != 0){
+                        //     uint8_t ack[1500];
+                        //     auto result = dmludp_send_data_acknowledge(dmludp_connection, ack, sizeof(ack));
+                        //     auto sent_result = ::send(client_fd, ack, result, 0);
+                        //     dmludp_update_receive_parameters(dmludp_connection);
+
+                        // }
+                        if(receive_count == 1200){
+                            break;
                         }
                         receive_count++;
                     }
